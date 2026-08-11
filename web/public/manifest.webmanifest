@@ -1,0 +1,46 @@
+{
+  "name": "Balaji CRM",
+  "short_name": "Balaji",
+  "description": "Leads, inventory, site visits and call logging for the brokerage.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F6F2EA",
+  "theme_color": "#15141B",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Call queue",
+      "short_name": "Queue",
+      "url": "/queue",
+      "description": "Jump straight to the next lead to call"
+    },
+    {
+      "name": "Log a call",
+      "short_name": "Log call",
+      "url": "/queue",
+      "description": "Fast call logging"
+    }
+  ]
+}

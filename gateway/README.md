@@ -1,0 +1,115 @@
+# WhatsApp Ingestion Gateway
+
+Reads the broker groups the owner has configured in the CRM and forwards every
+message to the API's ingest webhook. Extraction and dedup happen on the backend
+(`backend/app/workers/whatsapp.py`); this service does nothing but stay
+connected and lose nothing.
+
+## Read this before you set it up
+
+**There is no official WhatsApp API that can read group messages.** The
+official Cloud API only delivers messages sent *to* a registered business
+number — group traffic is not available through it at any price tier. Reading
+groups means driving a real WhatsApp account over the WhatsApp Web multi-device
+protocol, which is what this gateway does (via
+[Baileys](https://github.com/WhiskeySockets/Baileys), the library
+`docs/TECH_STACK.md` already specifies).
+
+What that means in practice:
+
+- **Use a dedicated phone number**, never a personal or business-critical one.
+  WhatsApp's terms permit banning accounts that automate, and while a
+  read-only, non-broadcasting client like this one is low risk, the risk is not
+  zero.
+- **The account must actually be a member of every group you want to read.**
+  There is no way to read a group from outside it.
+- **The session can drop** (phone offline for a long stretch, device unlinked,
+  WhatsApp update) and need re-pairing by QR. The CRM's inventory feed screen
+  shows when messages stopped arriving.
+- The gateway **only reads**. It never posts, replies, or marks itself online.
+
+## Setup
+
+```bash
+cd gateway
+npm install
+cp .env.example .env
+# Put the same secret here as in backend/.env → WHATSAPP_INGEST_SECRET
+```
+
+### 1. Pair the account
+
+```bash
+npm run pair
+```
+
+Scan the QR from the dedicated phone: **WhatsApp → Settings → Linked devices →
+Link a device**. The session is saved to `.wa-session/` and survives restarts.
+
+### 2. Find the group ids
+
+```bash
+npm run groups
+```
+
+Prints every group the account is in, with its id (`…@g.us`) and name.
+
+### 3. Add the groups in the CRM
+
+Sign in as the owner → **Inventory feed** → *Add group*, and paste the id and a
+name. Only groups added there are ever read; the gateway re-reads that list
+every 60 seconds, so switching a group off in the UI takes effect without a
+restart.
+
+### 4. Run it
+
+```bash
+npm start
+```
+
+Then run the extraction worker on the backend, which turns the stored messages
+into inventory:
+
+```bash
+cd ../backend
+./.venv/bin/python -m app.workers.whatsapp
+```
+
+## How it avoids losing or duplicating messages
+
+The two failure modes that matter are *dropping* a listing and *double-listing*
+one. They are handled at different layers:
+
+- **Dropping** — every message is appended to `.wa-outbox.jsonl` the moment it
+  arrives, before any network call. It is removed only once the API has
+  acknowledged it. A crash, an API restart, or an overnight outage costs a
+  replay, never data.
+- **Doubling** — the API keys on WhatsApp's own `wa_message_id` and ignores
+  anything it has already stored, so replaying is free. Beyond that, the
+  extraction pipeline deduplicates at the *listing* level, so the same flat
+  posted by six brokers is still one row in inventory.
+
+Requests are signed with `HMAC-SHA256(secret, "<unix-ts>.<raw body>")` and the
+API rejects anything unsigned, tampered with, or older than five minutes. The
+gateway never holds a user credential — it cannot read leads, contacts, or
+anything else in the CRM, which is the point of it living on its own box.
+
+## Operating notes
+
+- **`--list-groups` and `--pair` exit after running**; only `npm start` stays up.
+- **Media without a caption is skipped** — the pipeline extracts from text. A
+  photo of a flat with the details typed underneath works fine; a bare photo
+  has nothing to read.
+- **Messages older than `MAX_MESSAGE_AGE_MS` (default 24h) are ignored on
+  connect**, so a fresh pairing does not replay weeks of scrollback and
+  re-extract listings that are long gone. Raise it for a one-off backfill.
+- **Never commit `.wa-session/`.** It is the login.
+
+## Troubleshooting
+
+| Symptom | Cause |
+|---|---|
+| `logged out — the linked device was removed` | Someone unlinked the device from the phone. Delete `.wa-session/` and re-pair. |
+| `API ignored N unwatched group(s)` | Normal right after removing a group; already-journalled messages are discarded by the API. |
+| `delivery failed … retrying` | API down or the secret does not match `backend/.env`. Messages stay on disk. |
+| Messages arrive but no inventory appears | The extraction worker is not running, or `ANTHROPIC_API_KEY` is unset. Check **Inventory feed** in the CRM — it reports both. |

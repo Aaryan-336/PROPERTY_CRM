@@ -1,0 +1,5 @@
+node_modules/
+.env
+.wa-session/
+.wa-outbox.jsonl
+.wa-outbox.jsonl.tmp
