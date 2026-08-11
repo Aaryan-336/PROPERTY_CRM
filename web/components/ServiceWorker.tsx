@@ -10,9 +10,39 @@ export function ServiceWorker() {
 
     let cancelled = false;
 
+    /**
+     * Tear the worker down in development, and clear what it cached.
+     *
+     * Next serves dev chunks from unhashed, stable URLs, so any caching layer
+     * in front of them pins the browser to a stale bundle: the document is
+     * fetched fresh while its JavaScript comes from cache, which surfaces as a
+     * hydration mismatch and a UI that never updates however often you reload.
+     *
+     * This also self-heals a browser already holding a worker registered by an
+     * earlier build — without it the only fix is clearing site data by hand.
+     */
+    async function unregisterInDev() {
+      try {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(registrations.map((r) => r.unregister()));
+        if ("caches" in window) {
+          const keys = await caches.keys();
+          await Promise.all(
+            keys.filter((k) => k.startsWith("balaji-")).map((k) => caches.delete(k)),
+          );
+        }
+      } catch {
+        /* Best effort — never block the UI. */
+      }
+    }
+
     async function register() {
       try {
-        const registration = await navigator.serviceWorker.register("/sw.js");
+        // Keyed to the build so a deploy evicts the previous one's caches.
+        const version = process.env.NEXT_PUBLIC_SW_VERSION ?? "dev";
+        const registration = await navigator.serviceWorker.register(
+          `/sw.js?v=${encodeURIComponent(version)}`,
+        );
         if (cancelled) return;
         await subscribeToPush(registration);
       } catch {
@@ -20,7 +50,11 @@ export function ServiceWorker() {
       }
     }
 
-    void register();
+    if (process.env.NODE_ENV === "production") {
+      void register();
+    } else {
+      void unregisterInDev();
+    }
     return () => {
       cancelled = true;
     };

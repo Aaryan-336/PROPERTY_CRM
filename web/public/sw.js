@@ -11,7 +11,12 @@
  * pretending it succeeded. Offline write support is a later-phase decision.
  */
 
-const VERSION = "balaji-v1";
+// Keyed to the build, passed in on the register URL (see ServiceWorker.tsx).
+// A hardcoded constant here meant the activate handler below — which deletes
+// caches that do not match the current version — could never evict anything,
+// so every deploy left users on the previous build's assets.
+const BUILD = new URL(self.location.href).searchParams.get("v") || "dev";
+const VERSION = `balaji-${BUILD}`;
 const SHELL_CACHE = `${VERSION}-shell`;
 const DATA_CACHE = `${VERSION}-data`;
 
@@ -99,13 +104,27 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Static assets: cache first, they are content-hashed.
+  // Static assets: cache first — but only the immutable ones.
+  //
+  // `/_next/static/**` filenames carry a content hash in a production build, so
+  // a changed file is a changed URL and cache-first is safe. Everything else
+  // under `/_next/` is not hashed (dev chunks, RSC payloads, HMR), and serving
+  // those cache-first pins the browser to a stale JS bundle indefinitely: the
+  // document is fetched fresh while its chunks come from cache, which shows up
+  // as a hydration mismatch and a UI that never updates no matter how many
+  // times the page is reloaded.
+  const immutable = url.pathname.startsWith("/_next/static/");
+  if (!immutable) {
+    event.respondWith(fetch(request).catch(() => caches.match(request)));
+    return;
+  }
+
   event.respondWith(
     caches.match(request).then(
       (cached) =>
         cached ??
         fetch(request).then((response) => {
-          if (response.ok && url.pathname.startsWith("/_next/")) {
+          if (response.ok) {
             const copy = response.clone();
             caches.open(SHELL_CACHE).then((cache) => cache.put(request, copy));
           }
