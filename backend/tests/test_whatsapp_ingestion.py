@@ -460,12 +460,15 @@ def test_staff_cannot_add_a_monitored_group(client, alice_h):
     assert resp.status_code == 403
 
 
-def test_every_role_can_read_listing_provenance(client, alice_h, carol_h, seeded):
+def test_agents_can_read_listing_provenance(client, alice_h, seeded):
     """Agents need the posting broker's number to act on a listing, and the
-    repost count tells them how live it really is."""
+    repost count tells them how live it really is.
+
+    Cold Callers do not — they have no inventory access at all; see
+    test_workflow.test_cold_caller_cannot_browse_inventory.
+    """
     pid = seeded["property_id"]
     assert client.get(f"/properties/{pid}/sources", headers=alice_h).status_code == 200
-    assert client.get(f"/properties/{pid}/sources", headers=carol_h).status_code == 200
 
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { ListingProvenance } from "@/components/ListingProvenance";
 import { ShowingsTimeline } from "@/components/ShowingsTimeline";
@@ -28,6 +28,10 @@ export default async function PropertyDetail({
 }) {
   const { id } = await params;
   const user = await getCurrentUser();
+  // Cold Callers have no access to the lead book or the inventory — the API
+  // refuses both for this role. This redirect is a courtesy so a stale link or
+  // a bookmark lands somewhere useful rather than on an error.
+  if (user?.role === "cold_caller") redirect("/queue");
 
   let property: Property;
   try {

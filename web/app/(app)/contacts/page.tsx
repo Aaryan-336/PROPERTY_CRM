@@ -7,6 +7,8 @@ import { PlusIcon } from "@/components/icons";
 import { Card, EmptyState, STAGE_TONE, StatusPill } from "@/components/ui";
 import { api, qs } from "@/lib/api";
 import { budgetRange, fullName, relativeTime, stageLabel } from "@/lib/format";
+import { redirect } from "next/navigation";
+
 import { getCurrentUser } from "@/lib/session";
 import { STAGES, type Contact, type Paged, type User } from "@/lib/types";
 
@@ -27,6 +29,10 @@ export default async function ContactsPage({
 }) {
   const params = await searchParams;
   const user = await getCurrentUser();
+  // Cold Callers have no access to the lead book or the inventory — the API
+  // refuses both for this role. This redirect is a courtesy so a stale link or
+  // a bookmark lands somewhere useful rather than on an error.
+  if (user?.role === "cold_caller") redirect("/queue");
   const limit = 25;
   const offset = Number(params.offset ?? 0);
 

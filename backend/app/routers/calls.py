@@ -29,6 +29,7 @@ from app.schemas import (
     CallCreateResponse,
     CallOut,
     Paged,
+    QueueContact,
     QueueItem,
     TaskOut,
 )
@@ -292,8 +293,6 @@ def call_queue(
     )
 
     rows = db.execute(stmt).all()
-    contacts = [r[0] for r in rows]
-    serialized = {c.id: s for c, s in zip(contacts, serialize_contacts(db, principal, contacts))}
 
     request.state.audit.add(returned_count=len(rows), queue=True)
 
@@ -305,16 +304,20 @@ def call_queue(
     }
 
     items: list[QueueItem] = []
-    for contact, prio, due_at, last_outcome, last_temp, last_called in rows:
+    for contact, prio, due_at, _outcome, _temp, _called in rows:
         items.append(
             QueueItem(
-                contact=serialized[contact.id],
+                # Name and number only. The queue is a calling surface, not a
+                # window onto the lead book -- see schemas.QueueContact.
+                contact=QueueContact(
+                    id=contact.id,
+                    first_name=contact.first_name,
+                    last_name=contact.last_name,
+                    phone=contact.phone,
+                ),
                 reason=reasons.get(int(prio), "Queued"),
                 priority=int(prio),
                 due_at=due_at,
-                last_outcome=last_outcome,
-                last_temperature=last_temp,
-                last_called_at=last_called,
             )
         )
     return items

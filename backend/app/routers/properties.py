@@ -70,7 +70,7 @@ def _serialize(
 @router.get(
     "/properties",
     response_model=Paged[PropertyOut],
-    dependencies=[Depends(rate_limit_lists)],
+    dependencies=[Depends(rate_limit_lists), Depends(require("properties.read"))],
 )
 def list_properties(
     scoped: ScopedDep,
@@ -291,7 +291,11 @@ def contact_matches(
     ]
 
 
-@router.get("/properties/{property_id}", response_model=PropertyOut)
+@router.get(
+    "/properties/{property_id}",
+    response_model=PropertyOut,
+    dependencies=[Depends(require("properties.read"))],
+)
 def get_property(property_id: int, scoped: ScopedDep, db: SessionDep) -> PropertyOut:
     prop = db.execute(
         scoped.properties().where(Property.id == property_id)

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { ContactActions } from "@/components/ContactActions";
 import { LeadJourney } from "@/components/LeadJourney";
@@ -33,6 +33,10 @@ export default async function ContactDetail({
 }) {
   const { id } = await params;
   const user = await getCurrentUser();
+  // Cold Callers have no access to the lead book or the inventory — the API
+  // refuses both for this role. This redirect is a courtesy so a stale link or
+  // a bookmark lands somewhere useful rather than on an error.
+  if (user?.role === "cold_caller") redirect("/queue");
 
   let contact: Contact;
   try {
@@ -47,16 +51,12 @@ export default async function ContactDetail({
   const [calls, activities, showings, tasks, matches] = await Promise.all([
     api<Paged<CallLog>>(`/calls${qs({ contact_id: id, limit: 50 })}`),
     api<Paged<Activity>>(`/activities${qs({ contact_id: id, limit: 50 })}`),
-    user?.role === "cold_caller"
-      ? Promise.resolve({ items: [] as Showing[], total: 0, limit: 0, offset: 0, has_more: false })
-      : api<Paged<Showing>>(`/property-interests${qs({ contact_id: id, limit: 50 })}`),
+    api<Paged<Showing>>(`/property-interests${qs({ contact_id: id, limit: 50 })}`),
     api<Paged<Task>>(`/tasks${qs({ contact_id: id, status: "pending", limit: 20 })}`),
-    // Cold Callers cannot show properties, so suggestions would be noise on
-    // their screen. apiOptional keeps a permission change from breaking the
-    // page rather than only hiding the panel.
-    user?.role === "cold_caller"
-      ? Promise.resolve(null)
-      : apiOptional<PropertyMatch[]>(`/contacts/${id}/matches${qs({ limit: 6 })}`),
+    // apiOptional so a future permission change hides the panel rather than
+    // breaking the page. Cold Callers never reach here — they are redirected
+    // above and the API refuses them anyway.
+    apiOptional<PropertyMatch[]>(`/contacts/${id}/matches${qs({ limit: 6 })}`),
   ]);
 
   const name = fullName(contact);

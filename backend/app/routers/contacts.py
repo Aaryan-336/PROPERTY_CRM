@@ -42,7 +42,7 @@ router = APIRouter(tags=["contacts"])
 @router.get(
     "/contacts",
     response_model=Paged[ContactOut],
-    dependencies=[Depends(rate_limit_lists)],
+    dependencies=[Depends(rate_limit_lists), Depends(require("contacts.browse"))],
 )
 def list_contacts(
     scoped: ScopedDep,
@@ -437,7 +437,11 @@ def _to_decimal(value: str | None) -> Decimal | None:
         return None
 
 
-@router.get("/contacts/{contact_id}", response_model=ContactOut)
+@router.get(
+    "/contacts/{contact_id}",
+    response_model=ContactOut,
+    dependencies=[Depends(require("contacts.browse"))],
+)
 def get_contact(
     contact_id: int, scoped: ScopedDep, db: SessionDep, principal: PrincipalDep
 ) -> ContactOut:

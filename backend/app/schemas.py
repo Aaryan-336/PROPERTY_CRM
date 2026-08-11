@@ -380,14 +380,30 @@ class CallCreateResponse(BaseModel):
     follow_up_task: "TaskOut | None" = None
 
 
+class QueueContact(BaseModel):
+    """The only client data a call queue carries: who to ring, and on what number.
+
+    Deliberately not ``ContactOut``. Budget, preferred locations, stage and
+    lead score are not needed to place a call, and a queue that returns them
+    hands a caller the firm's book a page at a time. Narrowing the *response*
+    rather than hiding fields in the UI means the extra data never leaves the
+    server — the same reasoning as the phone masking in app/serializers.py.
+    """
+
+    id: int
+    first_name: str
+    last_name: str | None = None
+    phone: str | None = None
+
+
 class QueueItem(BaseModel):
-    contact: ContactOut
+    contact: QueueContact
+    # Why this lead surfaced now. Operational, not client data — without it the
+    # queue's order looks arbitrary and the caller cannot tell an overdue
+    # promise from a routine touch.
     reason: str
     priority: int
     due_at: datetime | None = None
-    last_outcome: str | None = None
-    last_temperature: str | None = None
-    last_called_at: datetime | None = None
 
 
 # ---------------------------------------------------------------------------

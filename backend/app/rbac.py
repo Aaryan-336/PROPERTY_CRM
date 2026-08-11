@@ -16,6 +16,17 @@ from app.scoping import Principal
 # Capability -> roles that hold it. Phase 1 roles only; Manager arrives in
 # Phase 2 with team-scoped variants of the Owner rows.
 CAPABILITIES: dict[str, frozenset[str]] = {
+    # Browsing the lead book, and browsing inventory, are both withheld from
+    # Cold Callers. They work a queue: one client at a time, name and number
+    # only. A caller who can page through the whole lead list or the firm's
+    # inventory can copy either, and neither is needed to make a call — which
+    # makes the access pure downside under SECURITY_MODEL.md's threat model
+    # (people who already have legitimate accounts).
+    #
+    # This is a capability, not a UI conditional, so hiding the nav is not what
+    # enforces it: the list endpoints refuse the role outright.
+    "contacts.browse": frozenset({ROLE_OWNER, ROLE_AGENT}),
+    "properties.read": frozenset({ROLE_OWNER, ROLE_AGENT}),
     "contacts.create": frozenset({ROLE_OWNER, ROLE_AGENT, ROLE_COLD_CALLER}),
     "contacts.edit": frozenset({ROLE_OWNER, ROLE_AGENT, ROLE_COLD_CALLER}),
     "contacts.delete": frozenset({ROLE_OWNER}),

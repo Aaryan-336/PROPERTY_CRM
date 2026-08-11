@@ -6,7 +6,7 @@ import { useState } from "react";
 
 import { ChevronRight, PhoneIcon } from "@/components/icons";
 import { InkCard, StatusPill } from "@/components/ui";
-import { budgetRange, clockTime, fullName, relativeTime } from "@/lib/format";
+import { clockTime, relativeTime } from "@/lib/format";
 import { CALL_OUTCOMES, TEMPERATURES, type QueueItem } from "@/lib/types";
 
 type Outcome = (typeof CALL_OUTCOMES)[number]["value"];
@@ -85,7 +85,7 @@ export function CallConsole({ queue }: { queue: QueueItem[] }) {
     const data = await res.json();
     setLogged({
       at: clockTime(data.call.created_at),
-      name: fullName(item.contact),
+      name: `${item.contact.first_name} ${item.contact.last_name ?? ""}`.trim(),
     });
     setDoneThisSession((n) => n + 1);
     setBusy(false);
@@ -132,6 +132,7 @@ export function CallConsole({ queue }: { queue: QueueItem[] }) {
   }
 
   const contact = item.contact;
+  const name = `${contact.first_name} ${contact.last_name ?? ""}`.trim();
   const phone = contact.phone?.replace(/[^\d+]/g, "");
 
   return (
@@ -169,36 +170,23 @@ export function CallConsole({ queue }: { queue: QueueItem[] }) {
               {item.reason}
             </p>
             <h1 className="font-display mt-1 truncate text-2xl leading-tight text-white">
-              {fullName(contact)}
+              {name}
             </h1>
           </div>
-          {item.last_temperature && (
-            <StatusPill
-              label={item.last_temperature}
-              tone={item.last_temperature === "hot" ? "signal" : "warning"}
-            />
-          )}
+          {/* Only when it is a broken promise — otherwise the eyebrow above
+              already says why this lead surfaced, and repeating it is noise. */}
+          {item.priority === 1 && <StatusPill label="Overdue" tone="signal" />}
         </div>
 
-        <dl className="mt-4 space-y-1.5 text-sm">
-          <Row label="Budget" value={budgetRange(contact.budget_min, contact.budget_max)} />
-          {contact.preferred_locations?.length ? (
-            <Row label="Looking in" value={contact.preferred_locations.join(", ")} />
-          ) : null}
-          {item.last_outcome && (
-            <Row
-              label="Last call"
-              value={`${item.last_outcome.replace(/_/g, " ")} · ${relativeTime(item.last_called_at)}`}
-            />
-          )}
-          {item.due_at && (
-            <Row label="Callback due" value={relativeTime(item.due_at)} />
-          )}
-        </dl>
+        {/* Name and number only. Budget, areas and stage are not needed to
+            place a call, and the queue endpoint does not return them. */}
+        <p className="tabular mt-3 text-lg text-white">
+          {contact.phone ?? "No number on this lead"}
+        </p>
 
-        {contact.contact_details_masked && (
-          <p className="mt-3 rounded-tile bg-ink-soft px-3 py-2 text-[11px] text-ink-dim">
-            The full number unlocks once you log your first call on this lead.
+        {item.due_at && (
+          <p className="tabular mt-2 text-xs text-ink-muted">
+            Callback due {relativeTime(item.due_at)}
           </p>
         )}
       </InkCard>
@@ -328,11 +316,3 @@ export function CallConsole({ queue }: { queue: QueueItem[] }) {
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between gap-4">
-      <dt className="shrink-0 text-ink-muted">{label}</dt>
-      <dd className="tabular truncate text-right text-ink-dim">{value}</dd>
-    </div>
-  );
-}

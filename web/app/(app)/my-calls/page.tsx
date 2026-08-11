@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { ChevronRight } from "@/components/icons";
 import {
   Card,
   EmptyState,
@@ -116,19 +115,12 @@ export default async function MyCallsPage() {
                 <li key={call.id} className="py-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      {call.contact_id ? (
-                        <Link
-                          href={`/contacts/${call.contact_id}`}
-                          className="flex items-center gap-1 truncate text-sm font-semibold text-ink"
-                        >
-                          {call.contact_name ?? "Lead"}
-                          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate" />
-                        </Link>
-                      ) : (
-                        <p className="truncate text-sm font-semibold text-ink">
-                          {call.contact_name ?? "Lead"}
-                        </p>
-                      )}
+                      {/* Not a link: Cold Callers have no lead-detail access,
+                          so this would be a dead end. Owners reviewing their
+                          own calls have the firm-wide feed for drill-down. */}
+                      <p className="truncate text-sm font-semibold text-ink">
+                        {call.contact_name ?? "Lead"}
+                      </p>
                       {call.notes && (
                         <p className="mt-0.5 line-clamp-2 text-xs text-slate">
                           {call.notes}

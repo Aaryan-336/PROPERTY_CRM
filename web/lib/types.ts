@@ -204,14 +204,20 @@ export type FeedItem = {
   flagged: boolean;
 };
 
+/** The only client data a call queue carries — see schemas.QueueContact. */
+export type QueueContact = {
+  id: number;
+  first_name: string;
+  last_name: string | null;
+  phone: string | null;
+};
+
 export type QueueItem = {
-  contact: Contact;
+  contact: QueueContact;
+  /** Why this lead surfaced now. Operational, not client data. */
   reason: string;
   priority: number;
   due_at: string | null;
-  last_outcome: string | null;
-  last_temperature: string | null;
-  last_called_at: string | null;
 };
 
 export type Task = {

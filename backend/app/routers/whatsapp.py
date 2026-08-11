@@ -495,6 +495,7 @@ def list_messages(
 @router.get(
     "/properties/{property_id}/sources",
     response_model=list[PropertySourceOut],
+    dependencies=[Depends(require("properties.read"))],
 )
 def property_sources(
     property_id: int, scoped: ScopedDep, db: SessionDep

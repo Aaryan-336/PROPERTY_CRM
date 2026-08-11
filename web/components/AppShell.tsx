@@ -36,8 +36,8 @@ const NAV: NavItem[] = [
   { href: "/", label: "Home", icon: HomeIcon, roles: ["owner", "agent", "cold_caller"] },
   { href: "/queue", label: "Queue", icon: PhoneIcon, roles: ["cold_caller"] },
   { href: "/my-calls", label: "My calls", icon: PulseIcon, roles: ["cold_caller"] },
-  { href: "/contacts", label: "Leads", icon: PeopleIcon, roles: ["owner", "agent", "cold_caller"] },
-  { href: "/properties", label: "Inventory", icon: BuildingIcon, roles: ["owner", "agent", "cold_caller"] },
+  { href: "/contacts", label: "Leads", icon: PeopleIcon, roles: ["owner", "agent"] },
+  { href: "/properties", label: "Inventory", icon: BuildingIcon, roles: ["owner", "agent"] },
   { href: "/showings", label: "Showings", icon: RouteIcon, roles: ["owner", "agent"] },
   { href: "/feed", label: "Activity", icon: PulseIcon, roles: ["owner"] },
   { href: "/escalations", label: "Escalations", icon: FlagIcon, roles: ["owner"] },
@@ -51,11 +51,10 @@ const NAV: NavItem[] = [
 const MOBILE_LIMIT: Record<Role, string[]> = {
   owner: ["/", "/feed", "/contacts", "/properties", "/escalations"],
   agent: ["/", "/contacts", "/properties", "/showings"],
-  // Five is the ceiling DESIGN_RULES.md allows. Inventory stays on the pill
-  // even though the queue is the caller's main job — they still get asked
-  // "what have you got in Powai?" on a live call, and losing it from mobile
-  // would mean the answer is only reachable on a laptop.
-  cold_caller: ["/", "/queue", "/contacts", "/my-calls", "/properties"],
+  // A caller's whole job is the queue, and they have no access to the lead
+  // book or the inventory — the API refuses both for this role, so putting
+  // them on the pill would only produce dead links.
+  cold_caller: ["/", "/queue", "/my-calls"],
   manager: ["/", "/contacts", "/properties"],
 };
 

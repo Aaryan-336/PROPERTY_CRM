@@ -238,8 +238,30 @@ def test_call_queue_puts_overdue_callbacks_first(client, carol_h, seeded):
 
 
 def test_cold_caller_queue_contains_only_their_own_leads(client, carol_h, seeded):
+    """Scoped to their own assignments.
+
+    Asserted through the queue rather than the contact list, because the list
+    is no longer readable by this role at all.
+    """
     queue = client.get("/call-queue", headers=carol_h).json()
-    assert {item["contact"]["owner_id"] for item in queue} <= {seeded["carol_id"]}
+    ids = {item["contact"]["id"] for item in queue}
+    mine = {seeded["carol_lead"]}
+    assert ids <= mine or seeded["carol_lead"] in ids
+    assert seeded["alice_lead"] not in ids
+    assert seeded["bob_lead"] not in ids
+
+
+def test_queue_carries_only_a_name_and_a_number(client, carol_h):
+    """The queue is a calling surface, not a window onto the lead book.
+
+    Budget, preferred locations, stage and lead score are absent from the
+    *response*, not merely hidden in the UI — so there is nothing to read off
+    the wire.
+    """
+    queue = client.get("/call-queue", headers=carol_h).json()
+    assert queue, "seed data should leave Carol something to call"
+    for item in queue:
+        assert set(item["contact"]) == {"id", "first_name", "last_name", "phone"}
 
 
 def test_logout_invalidates_the_token(client, seeded):
@@ -291,9 +313,34 @@ def test_login_does_not_reveal_whether_an_account_exists(client):
     assert unknown.json() == wrong.json()
 
 
-def test_inventory_is_readable_by_every_role(client, alice_h, carol_h, owner_h):
-    for headers in (alice_h, carol_h, owner_h):
+def test_inventory_is_readable_by_owner_and_agents(client, alice_h, owner_h):
+    for headers in (alice_h, owner_h):
         assert client.get("/properties", headers=headers).status_code == 200
+
+
+def test_cold_caller_cannot_browse_inventory(client, carol_h, seeded):
+    """A caller works a queue; they never need the inventory to place a call.
+
+    Withheld rather than hidden: the capability is absent from the role, so the
+    endpoint refuses before any query runs.
+    """
+    assert client.get("/properties", headers=carol_h).status_code == 403
+    pid = seeded["property_id"]
+    assert client.get(f"/properties/{pid}", headers=carol_h).status_code == 403
+    assert client.get(f"/properties/{pid}/sources", headers=carol_h).status_code == 403
+
+
+def test_cold_caller_cannot_browse_the_lead_book(client, carol_h, seeded):
+    """Their own queue is the only view of leads they get.
+
+    Paging the lead list is how a book gets copied, and none of it is needed to
+    make a call.
+    """
+    assert client.get("/contacts", headers=carol_h).status_code == 403
+    assert (
+        client.get(f"/contacts/{seeded['carol_lead']}", headers=carol_h).status_code
+        == 403
+    ), "not even their own lead's full record"
 
 
 def test_cold_caller_cannot_create_listings(client, carol_h):

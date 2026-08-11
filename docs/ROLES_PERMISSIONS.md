@@ -11,14 +11,14 @@
 
 | Capability | Owner | Manager | Agent | Cold Caller |
 |---|:---:|:---:|:---:|:---:|
-| View all contacts (firm-wide) | ✅ | Team only | ❌ (own only) | ❌ (assigned queue only) |
-| View own assigned contacts | ✅ | ✅ | ✅ | ✅ |
+| View all contacts (firm-wide) | ✅ | Team only | ❌ (own only) | ❌ |
+| Browse the lead list / open a lead | ✅ | ✅ | ✅ (own only) | ❌ — queue only, name + number |
 | Create/edit contacts | ✅ | ✅ | ✅ (own only) | ✅ (limited fields — remarks) |
 | Delete contacts (soft delete) | ✅ | ✅ | ❌ | ❌ |
 | Bulk export contacts | ✅ | ✅ (own team) | ❌ | ❌ |
-| View full phone/email (unmasked) | ✅ | ✅ | Only after first logged interaction | Only for assigned queue leads |
+| View full phone/email (unmasked) | ✅ | ✅ | Only after first logged interaction | Number of the lead being called |
 | Reassign lead ownership | ✅ | ✅ (own team) | ❌ (request only) | ❌ |
-| View all properties/inventory | ✅ | ✅ | ✅ | ✅ (view only) |
+| View all properties/inventory | ✅ | ✅ | ✅ | ❌ |
 | Add/edit property listings | ✅ | ✅ | ✅ | ❌ |
 | View firm-wide activity feed | ✅ | Team only | ❌ (own activity only) | ❌ (own activity only) |
 | View "who showed what to whom" | ✅ | Team only | Own records only | ❌ |
@@ -28,6 +28,26 @@
 | View audit log | ✅ (full) | ✅ (team) | ❌ | ❌ |
 | Manage users/roles | ✅ | ❌ | ❌ | ❌ |
 | Configure WhatsApp ingestion groups | ✅ | ❌ | ❌ | ❌ |
+
+## Cold Caller scope (revised)
+
+A Cold Caller sees **one surface: their queue**, and of the client only a
+**name and a mobile number**. No lead list, no lead detail, no inventory.
+
+The reasoning is the same one behind the export restriction in
+`SECURITY_MODEL.md`: none of it is needed to place a call, and a role that can
+page through the lead book or the inventory can copy either. Under a threat
+model of people who already hold legitimate accounts, access that adds no
+capability is pure downside.
+
+Enforced as capabilities (`contacts.browse`, `properties.read`) that the role
+simply does not hold, so `/contacts` and `/properties` refuse it outright — the
+missing nav items are a consequence, not the control. The queue endpoint
+narrows its *response* to `{id, first_name, last_name, phone}`, so the rest
+never leaves the server.
+
+Still available to a Cold Caller: their queue, one-tap call logging,
+temperature and remarks, escalation to the owner, and their own call history.
 
 ## Notes on enforcement
 
