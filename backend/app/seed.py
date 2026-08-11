@@ -79,7 +79,7 @@ LAST = [
 
 
 def reset() -> None:
-    engine = create_engine(settings.migration_database_url)
+    engine = create_engine(settings.sqlalchemy_migration_url)
     with engine.begin() as conn:
         conn.execute(text(f"TRUNCATE {', '.join(TABLES)} RESTART IDENTITY CASCADE"))
     engine.dispose()

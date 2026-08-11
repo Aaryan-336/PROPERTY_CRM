@@ -80,6 +80,12 @@ cd backend && ./.venv/bin/pytest      # 118 tests
 cd web && npx tsc --noEmit && npm run build
 ```
 
+## Deploying
+
+Render (API + Postgres) and Vercel (frontend): see
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md). A `render.yaml` blueprint is
+included; set the Vercel project's Root Directory to `web`.
+
 ## Documentation
 
 `docs/` holds the specs this was built against — `PRD.md`,

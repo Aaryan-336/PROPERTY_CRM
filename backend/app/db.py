@@ -36,7 +36,7 @@ from app.models import (
 )
 
 engine = create_engine(
-    settings.database_url,
+    settings.sqlalchemy_url,
     pool_pre_ping=True,
     future=True,
 )

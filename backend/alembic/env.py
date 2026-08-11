@@ -11,7 +11,7 @@ from app.models import Base
 config = context.config
 # Migrations connect as the migrator role, which owns the tables and holds DDL
 # rights. The application role deliberately does not.
-config.set_main_option("sqlalchemy.url", settings.migration_database_url)
+config.set_main_option("sqlalchemy.url", settings.sqlalchemy_migration_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

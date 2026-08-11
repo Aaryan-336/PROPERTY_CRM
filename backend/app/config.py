@@ -1,6 +1,19 @@
+import re
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Managed Postgres (Render, Heroku, Neon, Supabase) hands out URLs beginning
+# `postgres://` or `postgresql://`. SQLAlchemy needs the driver named
+# explicitly or it reaches for psycopg2, which is not installed here — the
+# failure is an opaque ImportError at first connection, so normalize instead.
+_PG_SCHEME = re.compile(r"^postgres(?:ql)?://")
+
+
+def normalize_db_url(url: str) -> str:
+    if not url:
+        return url
+    return _PG_SCHEME.sub("postgresql+psycopg://", url)
 
 
 class Settings(BaseSettings):
@@ -9,9 +22,11 @@ class Settings(BaseSettings):
     database_url: str = (
         "postgresql+psycopg://balaji_app:balaji_dev_pw@localhost:5432/balaji_crm"
     )
-    migration_database_url: str = (
-        "postgresql+psycopg://balaji_migrator:balaji_dev_pw@localhost:5432/balaji_crm"
-    )
+    # Empty means "same as database_url". Local development uses a separate
+    # migrator role that owns the tables (the app role deliberately has no DDL
+    # rights); managed Postgres hands you a single owner role instead, and
+    # requiring two URLs there would just mean setting the same value twice.
+    migration_database_url: str = ""
 
     jwt_secret: str = "change-me-in-production-please-use-a-long-random-value"
     jwt_algorithm: str = "HS256"
@@ -48,6 +63,16 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     extraction_model: str = "claude-opus-5"
     extraction_effort: str = "low"
+
+    @property
+    def sqlalchemy_url(self) -> str:
+        """Connection URL for the application role."""
+        return normalize_db_url(self.database_url)
+
+    @property
+    def sqlalchemy_migration_url(self) -> str:
+        """Connection URL migrations run as, falling back to the app role."""
+        return normalize_db_url(self.migration_database_url or self.database_url)
 
     @property
     def cors_origin_list(self) -> list[str]:

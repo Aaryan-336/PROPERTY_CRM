@@ -22,6 +22,15 @@ depends_on = None
 APP_ROLE = "balaji_app"
 
 
+def _role_exists(role: str) -> bool:
+    """True when `role` is a real Postgres role on this cluster."""
+    return bool(
+        op.get_bind()
+        .execute(sa.text("SELECT 1 FROM pg_roles WHERE rolname = :r"), {"r": role})
+        .scalar()
+    )
+
+
 def upgrade() -> None:
     op.create_table(
         "users",
@@ -273,7 +282,31 @@ def _apply_grants() -> None:
     audit_log gets INSERT and SELECT only. With no UPDATE or DELETE grant,
     Postgres refuses to rewrite history even if application code (or someone
     holding the app's credentials) tries to.
+
+    Skipped when the app role does not exist. Managed Postgres (Render, Neon,
+    Supabase, RDS) hands you a single owner role, and a bare ``GRANT ... TO
+    balaji_app`` against a role that was never created aborts the whole
+    migration — which would make the schema undeployable on every one of them.
+
+    The trade-off is real and worth stating: on a single-role deployment the
+    append-only guarantee on audit_log drops from "Postgres refuses" to "the
+    application never issues the statement". ``app/models.py`` and
+    ``app/audit.py`` still never emit an UPDATE or DELETE against it. To get
+    the database-level guarantee back, create the role and re-run this:
+
+        CREATE ROLE balaji_app LOGIN PASSWORD '<password>';
+        -- then point DATABASE_URL at balaji_app and re-run `alembic upgrade head`
+
+    See docs/DEPLOYMENT.md.
     """
+    if not _role_exists(APP_ROLE):
+        print(
+            f"[0001] role {APP_ROLE!r} not present - skipping GRANT/REVOKE. "
+            "audit_log append-only is enforced by application code only. "
+            "See docs/DEPLOYMENT.md to restore the database-level guarantee."
+        )
+        return
+
     writable = (
         "users",
         "contacts",

@@ -1,0 +1,83 @@
+# Render Blueprint — Balaji CRM backend.
+#
+# Deploys three things: a Postgres database, the FastAPI API, and the WhatsApp
+# extraction worker. The Next.js frontend goes to Vercel instead (see
+# docs/DEPLOYMENT.md); Render would happily host it, but Vercel is where the
+# App Router's caching and image handling are tuned.
+#
+# The WhatsApp *gateway* is deliberately NOT here. It holds a long-lived
+# WhatsApp Web session on disk, which needs a persistent disk (a paid Render
+# feature) and, more importantly, wants to sit somewhere the firm controls —
+# see the gateway section of docs/DEPLOYMENT.md.
+
+databases:
+  - name: balaji-db
+    databaseName: balaji_crm
+    plan: free
+    # Managed Postgres gives a single owner role. Migration 0001 detects that
+    # and skips the GRANT/REVOKE hardening; docs/DEPLOYMENT.md explains how to
+    # restore the database-level audit_log guarantee if you want it.
+
+services:
+  # ----------------------------------------------------------------- API
+  - type: web
+    name: balaji-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    # Migrations run on release, not in the build: the build has no database
+    # attached, and running them per-worker at boot would race.
+    preDeployCommand: alembic upgrade head
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.4"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: balaji-db
+          property: connectionString
+      # Generated once by Render and kept stable across deploys. Rotating it
+      # invalidates every live session, which is the intended behaviour if a
+      # secret ever leaks.
+      - key: JWT_SECRET
+        generateValue: true
+      - key: WHATSAPP_INGEST_SECRET
+        generateValue: true
+      # Set this to your Vercel domain after the frontend is deployed.
+      # Without it the browser blocks every API call as a CORS failure.
+      - key: CORS_ORIGINS
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: JWT_EXPIRY_HOURS
+        value: "12"
+      - key: MAX_PAGE_SIZE
+        value: "50"
+      - key: LIST_RATE_LIMIT_PER_MINUTE
+        value: "60"
+
+  # ------------------------------------------------- WhatsApp extraction
+  - type: worker
+    name: balaji-extraction-worker
+    runtime: python
+    plan: starter          # background workers are not available on the free plan
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m app.workers.whatsapp
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.4"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: balaji-db
+          property: connectionString
+      # Must match the API's key. Without it the worker exits on startup with
+      # an actionable message rather than silently failing every message.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: EXTRACTION_MODEL
+        value: claude-opus-5
+      - key: EXTRACTION_EFFORT
+        value: low
