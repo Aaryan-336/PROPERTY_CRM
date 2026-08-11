@@ -54,6 +54,42 @@ This creates `balaji-db`, `balaji-api`, and `balaji-extraction-worker`.
 > workers on free. If you are not using the WhatsApp feed yet, delete that
 > service from `render.yaml` before applying and add it later.
 
+### 1b. Or: create the Web Service by hand
+
+The Blueprint is just a shortcut. If you'd rather click through it — or you
+want the API without the worker — create the pieces individually:
+
+**New → PostgreSQL** → name `balaji-db`, database `balaji_crm`, free plan.
+
+**New → Web Service** → connect the repo, then:
+
+| Setting | Value |
+|---|---|
+| Root Directory | `backend` |
+| Language / Runtime | Python 3 |
+| Build Command | `pip install -r requirements.txt` |
+| Start Command | `alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
+| Health Check Path | `/health` |
+
+Environment variables:
+
+| Key | Value |
+|---|---|
+| `PYTHON_VERSION` | `3.12.4` |
+| `DATABASE_URL` | *Add from database* → `balaji-db` → Internal Connection String |
+| `JWT_SECRET` | Generate a long random value |
+| `CORS_ORIGINS` | Your Vercel URL (after step 5) |
+| `WHATSAPP_INGEST_SECRET` | Only if running the gateway |
+| `ANTHROPIC_API_KEY` | Only if running the WhatsApp feed |
+
+Use the **Internal** connection string — it stays on Render's private network
+and does not count against the database's external connection limit.
+
+**The extraction worker** is *New → Background Worker*, same repo, same root
+directory and build command, with `python -m app.workers.whatsapp` as the start
+command and the same `DATABASE_URL` / `ANTHROPIC_API_KEY`. Background Workers
+are not offered on the free plan.
+
 ### 2. Fill in the secrets Render can't generate
 
 On **balaji-api** → *Environment*, the three marked `sync: false` are blank:
@@ -68,8 +104,8 @@ On **balaji-api** → *Environment*, the three marked `sync: false` are blank:
 
 ### 3. Let it deploy
 
-`preDeployCommand` runs `alembic upgrade head` against the attached database.
-Watch the log for:
+The start command runs `alembic upgrade head` before booting uvicorn. Watch the
+log for:
 
 ```
 Running upgrade  -> 0001, Phase 1 schema.
@@ -84,32 +120,43 @@ curl https://balaji-api.onrender.com/health
 # {"status":"ok","phase":1,"push_enabled":false}
 ```
 
+> **Why migrations are in the start command, not a Pre-Deploy Command:**
+> Pre-Deploy Commands require a paid instance type. `alembic upgrade head` is
+> idempotent and free runs a single instance, so booting with it is safe. On a
+> paid plan with several instances, move it to `preDeployCommand` so it runs
+> once per release instead of once per instance.
+
 ### 4. Create the first owner account
 
-There is no public sign-up — by design, since this is an internal tool. Use
-Render's **Shell** tab on `balaji-api`:
+There is no public sign-up — by design, since this is an internal tool. And
+**Render's free instances have no Shell tab**, so create it from your own
+machine against the database's *external* connection string.
+
+Render → `balaji-db` → *Connect* → **External Connection String**. Then:
 
 ```bash
-python -m app.seed --reset     # demo data + all five logins
+cd backend
+DATABASE_URL='<the external connection string>' \
+  ./.venv/bin/python -m app.create_owner \
+    --name "Balaji Rao" --email owner@yourfirm.com --generate
 ```
 
-**On anything real, do not run the seed.** Create one owner instead:
-
-```bash
-python - <<'EOF'
-from app.db import SessionLocal, system_scope
-from app.models import User
-from app.security import hash_password
-db = SessionLocal()
-with system_scope():
-    db.add(User(name="Balaji Rao", email="owner@yourfirm.com", role="owner",
-                password_hash=hash_password("<a strong password>")))
-    db.commit()
-print("owner created")
-EOF
+```
+Owner created: owner@yourfirm.com
+Password:      Kyw5NrCqsN9rs0259fmX-g
+Save it now — it is not stored anywhere in readable form.
 ```
 
-Everyone else is added from the **Team** screen once you can sign in.
+Drop `--generate` to be prompted for your own password instead (it stays out of
+your shell history). The command refuses to run twice — everyone else is added
+from the **Team** screen once you can sign in.
+
+> On a *paid* instance you can skip the external URL and run the same command
+> from Render's Shell tab.
+>
+> `python -m app.seed --reset` creates demo data and five logins. Convenient
+> for a look around, but it wipes existing data — never point it at anything
+> real.
 
 ---
 
@@ -241,6 +288,7 @@ the anti-leakage control the product exists for.
 | Every API call fails, CORS error in console | `CORS_ORIGINS` missing the Vercel domain (step 7) |
 | `ImportError: psycopg2` | An old `DATABASE_URL` bypassing normalization — it should start `postgresql://` or `postgresql+psycopg://` |
 | Migration aborts, `role "balaji_app" does not exist` | Running a build from before this change — pull latest `main` |
+| `preDeployCommand` ignored / no Shell tab | Both are paid-tier features. The blueprint already migrates in the start command; create the owner from your laptop (step 4) |
 | First request after idle takes ~50s | Render free tier spins down. Upgrade to `starter`, or accept it |
 | Login works, then 401s everywhere | `JWT_SECRET` changed between deploys — it invalidates live sessions |
 | Inventory feed shows "Extraction is not configured" | `ANTHROPIC_API_KEY` not set on **both** the API and the worker |

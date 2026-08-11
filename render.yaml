@@ -26,10 +26,13 @@ services:
     plan: free
     rootDir: backend
     buildCommand: pip install -r requirements.txt
-    # Migrations run on release, not in the build: the build has no database
-    # attached, and running them per-worker at boot would race.
-    preDeployCommand: alembic upgrade head
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    # Migrations run in the start command, not a preDeployCommand, because
+    # Pre-Deploy Commands are a paid-tier feature and this blueprint has to
+    # work on free. `alembic upgrade head` is idempotent — a boot with nothing
+    # to apply is a no-op — and free runs a single instance, so there is no
+    # concurrent-migration race. If you move to a paid plan with several
+    # instances, lift this into preDeployCommand instead.
+    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
