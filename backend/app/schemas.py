@@ -186,6 +186,55 @@ class ReassignRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Bulk lead import (Excel / CSV -> cold caller queues)
+# ---------------------------------------------------------------------------
+
+
+class ImportRowPreview(BaseModel):
+    row_number: int
+    name: str
+    phone: str
+    email: str | None = None
+    location: str | None = None
+    status: Literal["new", "duplicate", "invalid"]
+    detail: str | None = None
+
+
+class ImportPreview(BaseModel):
+    """What the owner sees before committing an import.
+
+    Deliberately a separate round trip from the import itself: these files come
+    from portals and purchased lists with no agreed shape, so the owner should
+    see which column was read as the phone number before 800 rows land in
+    someone's queue.
+    """
+
+    filename: str
+    sheet_name: str | None = None
+    header_row: int | None = None
+    detected_columns: dict[str, str]
+    total_rows: int
+    importable: int
+    duplicates: int
+    invalid: int
+    warnings: list[str]
+    sample: list[ImportRowPreview]
+
+
+class ImportAssignment(BaseModel):
+    user_id: int
+    name: str
+    assigned: int
+
+
+class ImportResult(BaseModel):
+    imported: int
+    duplicates: int
+    invalid: int
+    assignments: list[ImportAssignment]
+
+
+# ---------------------------------------------------------------------------
 # Properties
 # ---------------------------------------------------------------------------
 

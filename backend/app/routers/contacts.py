@@ -5,11 +5,13 @@ import io
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, or_, select
 
+from app.db import system_scope
 from app.dedup import find_duplicates, to_response
+from app.lead_import import distribute, parse_lead_file
 from app.deps import (
     PageDep,
     PrincipalDep,
@@ -22,6 +24,10 @@ from app.errors import ApiError, bad_request, not_found
 from app.models import Activity, Contact, User
 from app.rbac import assert_capability, assert_contact_fields_writable
 from app.schemas import (
+    ImportAssignment,
+    ImportPreview,
+    ImportResult,
+    ImportRowPreview,
     ContactCreate,
     ContactOut,
     ContactUpdate,
@@ -218,82 +224,208 @@ def export_contacts(
 
 
 @router.post(
+    "/contacts/bulk-import/preview",
+    response_model=ImportPreview,
+    dependencies=[Depends(require("contacts.bulk_import"))],
+)
+def preview_import(
+    db: SessionDep,
+    request: Request,
+    file: UploadFile = File(description="Excel (.xlsx) or CSV calling list"),
+) -> ImportPreview:
+    """Parse a spreadsheet and report what would happen, writing nothing.
+
+    Separate from the commit because these files have no agreed shape — a
+    portal export, a purchased list, something typed by hand. The owner should
+    see which column was read as the phone number, and how many rows are
+    already in the system, before any of it lands in a caller's queue.
+    """
+    raw = file.file.read()
+    try:
+        parsed = parse_lead_file(raw, file.filename or "")
+    except ValueError as exc:
+        raise bad_request("unreadable_file", str(exc)) from exc
+
+    sample: list[ImportRowPreview] = []
+    duplicates = 0
+    invalid = 0
+
+    for row in parsed.rows:
+        if not row.usable:
+            invalid += 1
+            status, detail = "invalid", row.problem
+        else:
+            # Checked against the whole contact table, not the caller's scope:
+            # re-importing a lead that already belongs to a colleague is how
+            # ownership gets quietly rewritten (see app/dedup.py).
+            existing = find_duplicates(
+                db, row.first_name, row.last_name, row.phone
+            )
+            if existing:
+                duplicates += 1
+                status, detail = "duplicate", "already in the system"
+            else:
+                status, detail = "new", None
+
+        if len(sample) < 25:
+            sample.append(
+                ImportRowPreview(
+                    row_number=row.row_number,
+                    name=row.display_name or "—",
+                    phone=row.phone or "—",
+                    email=row.email or None,
+                    location=row.location or None,
+                    status=status,
+                    detail=detail,
+                )
+            )
+
+    importable = parsed.total_rows - duplicates - invalid
+    request.state.audit.add(
+        previewed=True,
+        filename=file.filename,
+        total_rows=parsed.total_rows,
+        importable=importable,
+    )
+
+    return ImportPreview(
+        filename=file.filename or "upload",
+        sheet_name=parsed.sheet_name,
+        header_row=parsed.header_row,
+        detected_columns=parsed.detected_columns,
+        total_rows=parsed.total_rows,
+        importable=importable,
+        duplicates=duplicates,
+        invalid=invalid,
+        warnings=parsed.warnings,
+        sample=sample,
+    )
+
+
+@router.post(
     "/contacts/bulk-import",
+    response_model=ImportResult,
     dependencies=[Depends(require("contacts.bulk_import"))],
 )
 def bulk_import_contacts(
     db: SessionDep,
     principal: PrincipalDep,
     request: Request,
-    file: UploadFile = File(description="CSV with a first_name column"),
-    assign_to: int | None = Query(
-        default=None, description="Staff member to assign every imported row to."
+    file: UploadFile = File(description="Excel (.xlsx) or CSV calling list"),
+    assign_to: list[int] = Form(
+        default=[],
+        description=(
+            "Staff who receive the leads. Several ids deal the rows out "
+            "round-robin. Empty assigns them to the importing Owner."
+        ),
     ),
-) -> dict:
-    """CSV import, Owner only. Rows that duplicate an existing lead are skipped.
+) -> ImportResult:
+    """Import a calling list and assign it.
 
-    Import is the mirror image of export and gets the same treatment: gated by
-    capability, and audited with counts.
+    Assignment is the whole point: setting `owner_id` is what puts a lead into
+    that person's call queue, since `/call-queue` is scoped to the contacts a
+    caller owns. There is no separate queue table to populate.
+
+    Owner only, and audited with counts and the recipients — a bulk write of
+    other people's contact details is exactly the kind of movement the audit
+    log exists to record.
     """
-    raw = file.file.read().decode("utf-8-sig", errors="replace")
-    reader = csv.DictReader(io.StringIO(raw))
+    raw = file.file.read()
+    try:
+        parsed = parse_lead_file(raw, file.filename or "")
+    except ValueError as exc:
+        raise bad_request("unreadable_file", str(exc)) from exc
 
-    imported = 0
-    skipped: list[dict] = []
-    allowed = {
-        "first_name",
-        "last_name",
-        "email",
-        "phone",
-        "lead_source",
-        "campaign",
-        "property_type_interest",
-        "buyer_type",
-        "stage",
-    }
+    targets = _resolve_assignees(db, assign_to, principal)
+    usable = parsed.usable_rows
 
-    for index, row in enumerate(reader, start=2):
-        clean = {k: (v or "").strip() for k, v in row.items() if k in allowed}
-        if not clean.get("first_name"):
-            skipped.append({"row": index, "reason": "missing first_name"})
+    duplicates = 0
+    invalid = sum(1 for r in parsed.rows if not r.usable)
+    fresh: list = []
+    for row in usable:
+        if find_duplicates(db, row.first_name, row.last_name, row.phone):
+            duplicates += 1
             continue
+        fresh.append(row)
 
-        dupes = find_duplicates(
-            db, clean["first_name"], clean.get("last_name"), clean.get("phone")
-        )
-        if dupes:
-            skipped.append({"row": index, "reason": "duplicate", "matched": dupes[0].contact.id})
-            continue
+    buckets = distribute(fresh, len(targets))
+    counts: dict[int, int] = {}
 
-        budget_min = _to_decimal(row.get("budget_min"))
-        budget_max = _to_decimal(row.get("budget_max"))
-        locations = [
-            part.strip()
-            for part in (row.get("preferred_locations") or "").split("|")
-            if part.strip()
-        ]
-
-        db.add(
-            Contact(
-                **{k: (v or None) for k, v in clean.items()},
-                budget_min=budget_min,
-                budget_max=budget_max,
-                preferred_locations=locations or None,
-                owner_id=assign_to or principal.id,
-                phone_masked=False,
-                stage=clean.get("stage") or "new",
+    for target, rows in zip(targets, buckets):
+        for row in rows:
+            db.add(
+                Contact(
+                    first_name=row.first_name or "Unknown",
+                    last_name=row.last_name or None,
+                    phone=row.phone or None,
+                    email=row.email or None,
+                    preferred_locations=[row.location] if row.location else None,
+                    lead_source=row.source or "imported_list",
+                    owner_id=target.id,
+                    stage="new",
+                    # A cold-calling list is unusable if the caller cannot see
+                    # the number, so imported rows are not masked. The lead
+                    # still only appears in the queue of whoever it was
+                    # assigned to.
+                    phone_masked=False,
+                )
             )
-        )
-        imported += 1
-
+            counts[target.id] = counts.get(target.id, 0) + 1
     db.commit()
+
+    imported = sum(counts.values())
     request.state.audit.add(
         imported_count=imported,
-        skipped_count=len(skipped),
-        assigned_to=assign_to or principal.id,
+        duplicate_count=duplicates,
+        invalid_count=invalid,
         filename=file.filename,
+        assigned_to=[t.id for t in targets],
     )
-    return {"imported": imported, "skipped": skipped}
+
+    return ImportResult(
+        imported=imported,
+        duplicates=duplicates,
+        invalid=invalid,
+        assignments=[
+            ImportAssignment(
+                user_id=t.id, name=t.name, assigned=counts.get(t.id, 0)
+            )
+            for t in targets
+        ],
+    )
+
+
+def _resolve_assignees(
+    db: SessionDep, ids: list[int], principal
+) -> list[User]:
+    """Validate the requested recipients, defaulting to the importer."""
+    wanted = [i for i in dict.fromkeys(ids) if i]
+    if not wanted:
+        with system_scope():
+            return [db.get(User, principal.id)]
+
+    with system_scope():
+        found = (
+            db.execute(
+                select(User)
+                .where(User.id.in_(wanted))
+                .where(User.deleted_at.is_(None))
+            )
+            .scalars()
+            .all()
+        )
+    if len(found) != len(wanted):
+        missing = set(wanted) - {u.id for u in found}
+        raise bad_request(
+            "unknown_user",
+            f"No active staff member with id {sorted(missing)}.",
+        )
+
+    # Return them in the order the caller asked for. `IN (...)` gives no
+    # ordering guarantee, and with an uneven split that would make *who* gets
+    # the extra rows differ between identical imports.
+    by_id = {u.id: u for u in found}
+    return [by_id[i] for i in wanted]
 
 
 def _to_decimal(value: str | None) -> Decimal | None:

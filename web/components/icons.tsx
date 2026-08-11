@@ -134,6 +134,14 @@ export const FeedIcon = (p: IconProps) => (
   </Svg>
 );
 
+/** Bulk import of a calling list. */
+export const UploadIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <path d="m17 8-5-5-5 5M12 3v12" />
+  </Svg>
+);
+
 export const KeyIcon = (p: IconProps) => (
   <Svg {...p}>
     <circle cx="7.5" cy="15.5" r="4.5" />

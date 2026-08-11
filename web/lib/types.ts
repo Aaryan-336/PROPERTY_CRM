@@ -295,3 +295,40 @@ export const INTEREST_LEVELS = [
   { value: "site_visit_done", label: "Visit Done" },
   { value: "negotiating", label: "Negotiating" },
 ] as const;
+
+export type ImportRowPreview = {
+  row_number: number;
+  name: string;
+  phone: string;
+  email: string | null;
+  location: string | null;
+  status: "new" | "duplicate" | "invalid";
+  detail: string | null;
+};
+
+export type ImportPreview = {
+  filename: string;
+  sheet_name: string | null;
+  header_row: number | null;
+  /** field -> the spreadsheet column it was read from. */
+  detected_columns: Record<string, string>;
+  total_rows: number;
+  importable: number;
+  duplicates: number;
+  invalid: number;
+  warnings: string[];
+  sample: ImportRowPreview[];
+};
+
+export type ImportAssignment = {
+  user_id: number;
+  name: string;
+  assigned: number;
+};
+
+export type ImportResult = {
+  imported: number;
+  duplicates: number;
+  invalid: number;
+  assignments: ImportAssignment[];
+};

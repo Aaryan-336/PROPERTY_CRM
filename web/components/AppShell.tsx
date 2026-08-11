@@ -17,6 +17,7 @@ import {
   RouteIcon,
   ShieldIcon,
   TeamIcon,
+  UploadIcon,
 } from "@/components/icons";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { Avatar } from "@/components/ui";
@@ -41,6 +42,7 @@ const NAV: NavItem[] = [
   { href: "/feed", label: "Activity", icon: PulseIcon, roles: ["owner"] },
   { href: "/escalations", label: "Escalations", icon: FlagIcon, roles: ["owner"] },
   { href: "/inventory-feed", label: "Inventory feed", icon: FeedIcon, roles: ["owner"] },
+  { href: "/import", label: "Import leads", icon: UploadIcon, roles: ["owner"] },
   { href: "/team", label: "Team", icon: TeamIcon, roles: ["owner"] },
   { href: "/audit", label: "Audit", icon: ShieldIcon, roles: ["owner"] },
 ];
