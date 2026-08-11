@@ -167,7 +167,7 @@ export function FeedConsole({
         </Banner>
       )}
 
-      <div className="grid gap-5 lg:grid-cols-[1fr_380px]">
+      <div className="grid gap-5 [&>*]:min-w-0 lg:grid-cols-[1fr_380px]">
         <div className="space-y-5">
           <Card className="p-5">
             <SectionHeading

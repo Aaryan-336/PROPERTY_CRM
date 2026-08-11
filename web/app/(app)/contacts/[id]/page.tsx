@@ -141,7 +141,7 @@ export default async function ContactDetail({
         </dl>
       </InkCard>
 
-      <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
+      <div className="grid gap-5 [&>*]:min-w-0 lg:grid-cols-[1fr_360px]">
         <Card className="p-5">
           <SectionHeading
             title="Journey"

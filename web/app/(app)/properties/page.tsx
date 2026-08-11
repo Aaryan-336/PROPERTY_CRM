@@ -133,7 +133,7 @@ export default async function PropertiesPage({
         />
       ) : (
         <>
-          <div className="grid gap-2.5 lg:hidden">
+          <div className="grid gap-2.5 [&>*]:min-w-0 lg:hidden">
             {properties.items.map((property) => (
               <Link key={property.id} href={`/properties/${property.id}`}>
                 <Card className="p-4">

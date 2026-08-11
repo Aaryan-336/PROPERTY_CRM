@@ -255,8 +255,13 @@ export function MetricTile({
     <div
       className={`rounded-tile px-3 py-3 sm:px-4 ${ink ? "bg-ink-soft" : "border border-hairline bg-card"}`}
     >
+      {/* A three-up grid on a 390px phone leaves ~75px for the label, and
+          longer ones ("Active leads", "Follow-ups") genuinely need two lines.
+          Rather than fight that, reserve both lines on small screens so the
+          numbers underneath still align across tiles — a ragged baseline is
+          what actually reads as broken, not the wrap itself. */}
       <p
-        className={`text-[10px] font-semibold uppercase tracking-[0.08em] sm:tracking-[0.14em] ${ink ? "text-ink-muted" : "text-slate"}`}
+        className={`block min-h-[2.3em] text-[10px] font-semibold uppercase leading-[1.15] tracking-[0.08em] sm:min-h-0 sm:leading-normal sm:tracking-[0.14em] ${ink ? "text-ink-muted" : "text-slate"}`}
       >
         {label}
       </p>

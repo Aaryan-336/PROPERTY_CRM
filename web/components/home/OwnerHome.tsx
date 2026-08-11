@@ -83,7 +83,7 @@ export async function OwnerHome({ user }: { user: User }) {
 
       {/* Desktop earns its keep here: three panels side by side instead of the
           stacked mobile view — a command centre, not a scaled-up phone. */}
-      <div className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
+      <div className="grid gap-5 [&>*]:min-w-0 lg:grid-cols-[1.15fr_0.85fr]">
         <Card className="p-5">
           <SectionHeading
             title="Live activity"

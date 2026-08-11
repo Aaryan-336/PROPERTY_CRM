@@ -135,7 +135,7 @@ export function TeamBoard({
         {groupRows.length === 0 ? (
           children
         ) : (
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid gap-3 [&>*]:min-w-0 lg:grid-cols-2">
             {groupRows.map((row) => (
               <StaffCard
                 key={row.user.id}
