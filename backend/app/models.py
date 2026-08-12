@@ -62,6 +62,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -195,6 +196,19 @@ class Contact(Base):
     buyer_type: Mapped[str | None] = mapped_column(Text)
     lead_score: Mapped[int | None] = mapped_column(Integer, default=0)
     stage: Mapped[str | None] = mapped_column(Text, default="new")
+    # A row from a purchased calling list is a phone number, not a lead. It sits
+    # in a caller's queue and stays out of the leads pipeline until someone has
+    # actually spoken to the person and flagged them — see CallLog.marked_lead.
+    # Contacts created any other way (walk-in, referral, portal) are leads from
+    # the moment they exist, which is why this defaults to true.
+    is_lead: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true"), default=True
+    )
+    # Which uploaded spreadsheet this came from, so the owner can tell which
+    # lists are worth buying again. Null for everything not imported.
+    batch_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("lead_batches.id")
+    )
     owner_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -211,11 +225,44 @@ class Contact(Base):
             "phone",
             postgresql_where=(deleted_at.is_(None)),
         ),
+        # Every batch performance figure groups by this, and the leads list
+        # filters on is_lead, so the two travel together.
+        Index("idx_contacts_batch", "batch_id", "is_lead"),
     )
 
     @property
     def full_name(self) -> str:
         return f"{self.first_name} {self.last_name or ''}".strip()
+
+
+class LeadBatch(Base):
+    """One uploaded calling list.
+
+    The owner buys these lists, and the only question that matters afterwards is
+    whether a given list was worth the money. Grouping the rows under a named
+    batch is what makes that answerable — without it, a spreadsheet dissolves
+    into the contact table on import and its performance can never be recovered.
+    """
+
+    __tablename__ = "lead_batches"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    source_filename: Mapped[str | None] = mapped_column(Text)
+    uploaded_by_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id")
+    )
+    # What the file contained, kept even though the rows themselves may have
+    # been rejected: "600 rows in, 480 usable" is the useful comparison between
+    # two vendors, and it is unrecoverable once the duplicates are dropped.
+    total_rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    imported_rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    duplicate_rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    invalid_rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Property(Base):
@@ -312,6 +359,11 @@ class CallLog(Base):
     temperature: Mapped[str | None] = mapped_column(Text)
     notes: Mapped[str | None] = mapped_column(Text)
     flagged_for_owner: Mapped[bool | None] = mapped_column(Boolean, default=False)
+    # The caller judged this number to be a real prospect, which is the only
+    # thing that turns an imported row into a lead. Recorded on the call rather
+    # than only on the contact so the batch reports can attribute the decision
+    # to a person and a moment.
+    marked_lead: Mapped[bool | None] = mapped_column(Boolean, default=False)
     follow_up_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

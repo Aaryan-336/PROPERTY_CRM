@@ -23,22 +23,34 @@ export function Sheet({
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
 
+  // Every caller passes an inline arrow for onClose, so its identity changes on
+  // each of their renders. Kept in a ref, the effect below can depend on `open`
+  // alone — see the comment on the focus call for why that matters.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
   useEffect(() => {
     if (!open) return;
 
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") onCloseRef.current();
     }
     document.addEventListener("keydown", onKey);
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+    // Once, as the sheet opens. This used to re-run on every parent render:
+    // typing a character into a field re-rendered the caller, which produced a
+    // fresh onClose, which re-ran this effect and pulled focus back to the
+    // panel. One character in and the caret jumped out of the box.
     panelRef.current?.focus();
 
     return () => {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = previousOverflow;
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 

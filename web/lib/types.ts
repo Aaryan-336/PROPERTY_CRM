@@ -18,6 +18,9 @@ export type Contact = {
   email: string | null;
   phone: string | null;
   contact_details_masked: boolean;
+  /** False for an imported number nobody has flagged as a lead yet. */
+  is_lead: boolean;
+  batch_id: number | null;
   lead_source: string | null;
   campaign: string | null;
   budget_min: string | null;
@@ -362,8 +365,46 @@ export type ImportAssignment = {
 };
 
 export type ImportResult = {
+  batch_id: number;
+  batch_name: string;
   imported: number;
   duplicates: number;
   invalid: number;
   assignments: ImportAssignment[];
+};
+
+/**
+ * One uploaded calling list, with how it is actually doing.
+ *
+ * Rates are `null` rather than 0 when their denominator is empty — a list
+ * uploaded this morning and a list that was worked hard and produced nothing
+ * both read "0%" otherwise, and they call for opposite decisions.
+ */
+export type BatchPerformance = {
+  id: number;
+  name: string;
+  source_filename: string | null;
+  uploaded_by: string | null;
+  created_at: string;
+  archived_at: string | null;
+
+  /** The file as delivered, before dedup — how clean the source was. */
+  total_rows: number;
+  duplicate_rows: number;
+  invalid_rows: number;
+
+  size: number;
+  called: number;
+  uncalled: number;
+  reached: number;
+  leads: number;
+  showings: number;
+  closed: number;
+
+  contact_rate: number | null;
+  reach_rate: number | null;
+  conversion_rate: number | null;
+
+  assigned_to: string[];
+  last_activity_at: string | null;
 };

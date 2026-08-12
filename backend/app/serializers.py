@@ -104,6 +104,8 @@ def serialize_contacts(
                 buyer_type=c.buyer_type,
                 lead_score=c.lead_score,
                 stage=c.stage,
+                is_lead=c.is_lead,
+                batch_id=c.batch_id,
                 owner_id=c.owner_id,
                 owner_name=names.get(c.owner_id) if c.owner_id else None,
                 created_at=c.created_at,

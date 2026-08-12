@@ -212,6 +212,10 @@ class ContactOut(BaseModel):
     buyer_type: str | None = None
     lead_score: int | None = None
     stage: str | None = None
+    # False for an imported number nobody has qualified yet. Drives whether the
+    # "mark as a lead" control is offered when logging a call.
+    is_lead: bool = True
+    batch_id: int | None = None
     owner_id: int | None = None
     owner_name: str | None = None
     created_at: datetime
@@ -277,10 +281,52 @@ class ImportAssignment(BaseModel):
 
 
 class ImportResult(BaseModel):
+    batch_id: int
+    batch_name: str
     imported: int
     duplicates: int
     invalid: int
     assignments: list[ImportAssignment]
+
+
+class BatchPerformance(BaseModel):
+    """How one uploaded calling list is doing.
+
+    The owner's question is whether a list was worth buying, so the headline is
+    `leads` — people a caller judged worth keeping — over `called`, not over
+    the size of the file. A list nobody has started on should not look like a
+    list that failed, which is why the rates are null rather than zero when
+    their denominator is empty.
+    """
+
+    id: int
+    name: str
+    source_filename: str | None
+    uploaded_by: str | None
+    created_at: datetime
+    archived_at: datetime | None
+
+    # As delivered, before dedup — how dirty the file itself was.
+    total_rows: int
+    duplicate_rows: int
+    invalid_rows: int
+
+    # Live counts, recomputed on read: numbers get called and flagged after the
+    # import, so nothing here can be frozen at upload time.
+    size: int
+    called: int
+    uncalled: int
+    reached: int
+    leads: int
+    showings: int
+    closed: int
+
+    contact_rate: float | None
+    reach_rate: float | None
+    conversion_rate: float | None
+
+    assigned_to: list[str]
+    last_activity_at: datetime | None
 
 
 # ---------------------------------------------------------------------------
@@ -405,6 +451,10 @@ class CallCreate(BaseModel):
     temperature: Literal["hot", "warm", "cold"] | None = None
     notes: str | None = None
     flagged_for_owner: bool = False
+    # Promotes an imported number into the leads pipeline. Only a person who
+    # has actually spoken to someone can judge this, so it is never inferred
+    # from the outcome — "interested" on a cold call is often just politeness.
+    marked_lead: bool = False
     follow_up_at: datetime | None = None
 
 

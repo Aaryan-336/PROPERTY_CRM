@@ -20,11 +20,13 @@ export function ContactActions({
   contactName,
   phone,
   canLogShowing,
+  isLead = true,
 }: {
   contactId: number;
   contactName: string;
   phone: string | null;
   canLogShowing: boolean;
+  isLead?: boolean;
 }) {
   const [calling, setCalling] = useState(false);
   const [showing, setShowing] = useState(false);
@@ -58,6 +60,7 @@ export function ContactActions({
         contactId={contactId}
         contactName={contactName}
         phone={phone}
+        isLead={isLead}
         open={calling}
         onClose={() => setCalling(false)}
       />

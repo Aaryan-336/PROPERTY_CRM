@@ -24,13 +24,15 @@ Base: REST, JSON, JWT bearer auth. Every endpoint below is subject to the role s
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/contacts` | Paginated (max 50/page), filterable by stage/owner/source/score. Query-scoped by role. |
+| GET | `/contacts` | Paginated (max 50/page), filterable by stage/owner/source/score. Query-scoped by role. Excludes imported numbers nobody has flagged as a lead — `include_targets=true` includes them, `batch_id` narrows to one database. |
 | POST | `/contacts` | Create; triggers dedup check |
 | GET | `/contacts/{id}` | Full detail; phone/email masked per role + `phone_masked` state |
 | PATCH | `/contacts/{id}` | Update fields; audit-logged |
 | DELETE | `/contacts/{id}` | Soft delete only (Owner/Manager) |
 | POST | `/contacts/{id}/reassign` | Owner/Manager only; requires approval, audit-logged with old/new owner |
 | POST | `/contacts/bulk-import/preview` | Owner only — parse an Excel/CSV calling list and report what would happen, writing nothing. Detects the header row under title rows, maps columns by alias, and falls back to value-sniffing when headers are unrecognised or absent. |
+| GET | `/lead-batches` | Owner only — every uploaded calling list with live conversion numbers: size, called, reached, leads produced, and rates. Rates are `null`, not 0, when the denominator is empty. |
+| GET | `/lead-batches/{id}` | One database's performance. |
 | POST | `/contacts/bulk-import` | Owner only — import and assign. `assign_to` accepts several staff ids and deals rows round-robin. Setting `owner_id` is what places a lead in that person's `/call-queue`. Existing leads are skipped via the contact dedup in `app/dedup.py`. Audited with counts and recipients. |
 | GET | `/contacts/export` | Owner/Manager only; audit-logged with row count |
 

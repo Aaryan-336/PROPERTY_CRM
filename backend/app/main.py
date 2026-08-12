@@ -17,6 +17,7 @@ from app.routers import (
     auth,
     calls,
     contacts,
+    lead_batches,
     notifications,
     properties,
     showings,
@@ -141,5 +142,6 @@ for module in (
     audit,
     notifications,
     whatsapp,
+    lead_batches,
 ):
     app.include_router(module.router)

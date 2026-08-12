@@ -20,12 +20,15 @@ export function LogCallSheet({
   contactId,
   contactName,
   phone,
+  isLead = true,
   open,
   onClose,
 }: {
   contactId: number;
   contactName: string;
   phone?: string | null;
+  /** False for an imported number nobody has qualified yet. */
+  isLead?: boolean;
   open: boolean;
   onClose: () => void;
 }) {
@@ -36,6 +39,7 @@ export function LogCallSheet({
   const [temperature, setTemperature] = useState<Temperature | null>(null);
   const [notes, setNotes] = useState("");
   const [flagged, setFlagged] = useState(false);
+  const [markLead, setMarkLead] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
@@ -53,6 +57,7 @@ export function LogCallSheet({
         temperature,
         notes: notes.trim() || null,
         flagged_for_owner: flagged,
+        marked_lead: markLead,
       }),
     }).catch(() => null);
 
@@ -72,7 +77,7 @@ export function LogCallSheet({
     setSaved(
       `Logged at ${clockTime(data.call.created_at)}${
         data.follow_up_task ? " · follow-up reminder created" : ""
-      }${flagged ? " · owner notified" : ""}`,
+      }${markLead ? " · added to leads" : ""}${flagged ? " · owner notified" : ""}`,
     );
     setBusy(false);
     router.refresh();
@@ -89,6 +94,7 @@ export function LogCallSheet({
     setTemperature(null);
     setNotes("");
     setFlagged(false);
+    setMarkLead(false);
     setError(null);
   }
 
@@ -170,6 +176,40 @@ export function LogCallSheet({
               className="w-full resize-none rounded-tile border border-hairline bg-card px-4 py-3 text-[16px] outline-none focus:border-sandstone focus:ring-2 focus:ring-sandstone-soft"
             />
           </div>
+
+          {/* Only for numbers off an imported list. On someone who is already
+              a lead the control has nothing to do, and an inert toggle invites
+              the belief that it does something. */}
+          {!isLead && (
+            <button
+              type="button"
+              onClick={() => setMarkLead(!markLead)}
+              aria-pressed={markLead}
+              className={`tap flex w-full items-center justify-between rounded-tile border px-4 text-sm font-semibold transition-colors ${
+                markLead
+                  ? "border-teal bg-teal-soft text-teal"
+                  : "border-hairline bg-card text-ink"
+              }`}
+            >
+              <span className="text-left">
+                Mark as a lead
+                <span className="block text-xs font-normal opacity-70">
+                  Adds them to the leads pipeline
+                </span>
+              </span>
+              <span
+                className={`flex h-6 w-11 shrink-0 items-center rounded-pill px-0.5 transition-colors ${
+                  markLead ? "bg-teal" : "bg-hairline"
+                }`}
+              >
+                <span
+                  className={`h-5 w-5 rounded-full bg-white transition-transform ${
+                    markLead ? "translate-x-5" : ""
+                  }`}
+                />
+              </span>
+            </button>
+          )}
 
           <button
             type="button"

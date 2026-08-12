@@ -82,6 +82,7 @@ def log_call(
         temperature=payload.temperature,
         notes=payload.notes,
         flagged_for_owner=payload.flagged_for_owner,
+        marked_lead=payload.marked_lead,
         follow_up_at=payload.follow_up_at,
     )
     db.add(call)
@@ -91,6 +92,16 @@ def log_call(
     # (see app/masking.py) -- do the work, earn the detail.
     if contact.stage == "new":
         contact.stage = "contacted"
+        contact.updated_at = datetime.now(timezone.utc)
+
+    # The one path by which an imported number becomes a lead. Deliberately a
+    # separate judgement from the outcome: a caller can log fifty "interested"
+    # results on a bought list and none of them belong in the pipeline until
+    # someone says so. One-way — un-flagging is a reassignment decision for the
+    # owner, not something to bury in a call form.
+    promoted = payload.marked_lead and not contact.is_lead
+    if promoted:
+        contact.is_lead = True
         contact.updated_at = datetime.now(timezone.utc)
 
     follow_up: Task | None = None
@@ -119,6 +130,9 @@ def log_call(
         outcome=payload.outcome,
         temperature=payload.temperature,
         flagged_for_owner=payload.flagged_for_owner,
+        marked_lead=payload.marked_lead,
+        promoted_to_lead=promoted,
+        batch_id=contact.batch_id,
         follow_up_task_created=follow_up is not None,
     )
 

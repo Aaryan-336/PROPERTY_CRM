@@ -21,7 +21,7 @@ from app.deps import (
     require,
 )
 from app.errors import ApiError, bad_request, not_found
-from app.models import Activity, Contact, User
+from app.models import Activity, Contact, LeadBatch, User
 from app.rbac import assert_capability, assert_contact_fields_writable
 from app.schemas import (
     ImportAssignment,
@@ -55,15 +55,34 @@ def list_contacts(
     source: str | None = None,
     min_score: int | None = None,
     q: str | None = Query(default=None, description="Name or phone fragment"),
+    batch_id: int | None = Query(
+        default=None, description="Only numbers from this imported database"
+    ),
+    include_targets: bool = Query(
+        default=False,
+        description=(
+            "Include imported numbers nobody has flagged as a lead yet. "
+            "Off by default — this endpoint backs the leads screen."
+        ),
+    ),
 ) -> Paged[ContactOut]:
     """List contacts the caller is permitted to see.
 
     ``scoped.contacts()`` already carries ``WHERE owner_id = :me`` for Agent and
     Cold Caller. The filters below narrow that set further and can never widen
     it -- passing ``owner_id`` for a colleague yields an empty page, not theirs.
+
+    Unflagged imported numbers are excluded unless asked for. Six hundred rows
+    off a bought spreadsheet are not six hundred leads, and letting them into
+    this list buries the handful of people who actually want to buy something.
+    They remain fully visible in the call queue, which is where they belong.
     """
     stmt = scoped.contacts()
 
+    if not include_targets:
+        stmt = stmt.where(Contact.is_lead.is_(True))
+    if batch_id is not None:
+        stmt = stmt.where(Contact.batch_id == batch_id)
     if stage:
         stmt = stmt.where(Contact.stage == stage)
     if owner_id is not None:
@@ -315,16 +334,29 @@ def bulk_import_contacts(
     assign_to: list[int] = Form(
         default=[],
         description=(
-            "Staff who receive the leads. Several ids deal the rows out "
+            "Staff who receive the numbers. Several ids deal the rows out "
             "round-robin. Empty assigns them to the importing Owner."
         ),
     ),
+    name: str = Form(
+        default="",
+        description="What to call this database. Defaults to the filename.",
+    ),
 ) -> ImportResult:
-    """Import a calling list and assign it.
+    """Import a calling list as call targets and assign it.
 
-    Assignment is the whole point: setting `owner_id` is what puts a lead into
+    Assignment is the whole point: setting `owner_id` is what puts a number into
     that person's call queue, since `/call-queue` is scoped to the contacts a
     caller owns. There is no separate queue table to populate.
+
+    What lands here is *not* a lead. A purchased spreadsheet is a list of people
+    who have not asked to hear from us, and treating those as leads inflates
+    every pipeline figure the owner looks at. They import with `is_lead=False`,
+    which keeps them out of the leads screen while leaving them fully callable;
+    a caller flags the ones worth keeping (see `marked_lead` in routers/calls).
+
+    Every row is tagged with a batch so the owner can compare one list against
+    another later — that is the whole basis of `GET /lead-batches`.
 
     Owner only, and audited with counts and the recipients — a bulk write of
     other people's contact details is exactly the kind of movement the audit
@@ -348,6 +380,22 @@ def bulk_import_contacts(
             continue
         fresh.append(row)
 
+    # Recorded before the rows so the counts describe the file as delivered,
+    # not what survived it. "600 rows in, 480 usable" is exactly the comparison
+    # that tells the owner one vendor's list is dirtier than another's, and it
+    # is unrecoverable once the duplicates have been dropped.
+    batch = LeadBatch(
+        name=(name.strip() or file.filename or "Untitled list")[:120],
+        source_filename=file.filename,
+        uploaded_by_id=principal.id,
+        total_rows=parsed.total_rows,
+        imported_rows=len(fresh),
+        duplicate_rows=duplicates,
+        invalid_rows=invalid,
+    )
+    db.add(batch)
+    db.flush()
+
     buckets = distribute(fresh, len(targets))
     counts: dict[int, int] = {}
 
@@ -363,8 +411,13 @@ def bulk_import_contacts(
                     lead_source=row.source or "imported_list",
                     owner_id=target.id,
                     stage="new",
+                    batch_id=batch.id,
+                    # A number off a bought list, not a lead. It is callable
+                    # immediately but stays out of the pipeline until a caller
+                    # has spoken to the person and flagged them.
+                    is_lead=False,
                     # A cold-calling list is unusable if the caller cannot see
-                    # the number, so imported rows are not masked. The lead
+                    # the number, so imported rows are not masked. The number
                     # still only appears in the queue of whoever it was
                     # assigned to.
                     phone_masked=False,
@@ -375,6 +428,8 @@ def bulk_import_contacts(
 
     imported = sum(counts.values())
     request.state.audit.add(
+        batch_id=batch.id,
+        batch_name=batch.name,
         imported_count=imported,
         duplicate_count=duplicates,
         invalid_count=invalid,
@@ -383,6 +438,8 @@ def bulk_import_contacts(
     )
 
     return ImportResult(
+        batch_id=batch.id,
+        batch_name=batch.name,
         imported=imported,
         duplicates=duplicates,
         invalid=invalid,

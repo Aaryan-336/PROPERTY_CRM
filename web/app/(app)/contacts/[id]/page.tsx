@@ -217,6 +217,7 @@ export default async function ContactDetail({
         contactName={name}
         phone={contact.contact_details_masked ? null : contact.phone}
         canLogShowing={canShowProperty}
+        isLead={contact.is_lead}
       />
     </div>
   );

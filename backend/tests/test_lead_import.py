@@ -185,7 +185,9 @@ def _purge_contacts(phone_like: str) -> None:
             )
         ]
         if ids:
-            for model in (CallLog, Task):
+            # Tasks first: tasks.source_call_log_id points at call_logs, so
+            # deleting the calls first trips the foreign key.
+            for model in (Task, CallLog):
                 db.execute(delete(model).where(model.contact_id.in_(ids)))
             db.execute(delete(Contact).where(Contact.id.in_(ids)))
             db.commit()
@@ -374,3 +376,168 @@ def test_queue_reports_the_true_total_and_pages_beyond_the_cap(
 def test_queue_request_cap_still_holds(client, carol_h):
     """Pagination must not become a way to pull the whole book in one call."""
     assert client.get("/call-queue?limit=500", headers=carol_h).status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Databases: imports are call targets, not leads
+#
+# A purchased spreadsheet is a list of people who never asked to hear from us.
+# Counting those as leads inflates every pipeline number the owner looks at, so
+# they import unqualified and stay that way until a caller says otherwise.
+# ---------------------------------------------------------------------------
+
+
+def test_imported_numbers_stay_out_of_the_leads_list(client, owner_h, seeded):
+    rows = [["Name", "Mobile"], ["Targetta Mistry", "9768100001"]]
+    try:
+        created = client.post(
+            "/contacts/bulk-import",
+            files=_upload(rows),
+            data={"assign_to": [str(seeded["carol_id"])], "name": "Vendor A"},
+            headers=owner_h,
+        ).json()
+        assert created["imported"] == 1
+        found = client.get("/contacts?q=Targetta", headers=owner_h).json()
+        assert found["total"] == 0
+
+        # Still reachable when explicitly asked for, which is what the batch
+        # drill-down needs — hidden by default is not the same as inaccessible.
+        every = client.get(
+            "/contacts?q=Targetta&include_targets=true", headers=owner_h
+        ).json()
+        assert every["total"] == 1
+    finally:
+        _purge_contacts("9768100%")
+
+
+def test_imported_numbers_are_still_callable(client, owner_h, carol_h, seeded):
+    """Out of the leads list, but fully present in the queue.
+
+    The whole point is that a caller still works them; only the owner's
+    pipeline view is protected.
+    """
+    rows = [["Name", "Mobile"], ["Callabella Nadkarni", "9768200001"]]
+    try:
+        created = client.post(
+            "/contacts/bulk-import",
+            files=_upload(rows),
+            data={"assign_to": [str(seeded["carol_id"])]},
+            headers=owner_h,
+        ).json()
+        assert created["imported"] == 1
+        queue = client.get("/call-queue?limit=50", headers=carol_h).json()["items"]
+        assert any(i["contact"]["first_name"] == "Callabella" for i in queue)
+    finally:
+        _purge_contacts("9768200%")
+
+
+def test_flagging_a_call_is_what_creates_the_lead(client, owner_h, carol_h, seeded):
+    rows = [["Name", "Mobile"], ["Promotina Iyengar", "9768300001"]]
+    try:
+        created = client.post(
+            "/contacts/bulk-import",
+            files=_upload(rows),
+            data={"assign_to": [str(seeded["carol_id"])]},
+            headers=owner_h,
+        ).json()
+        assert created["imported"] == 1
+        queue = client.get("/call-queue?limit=50", headers=carol_h).json()["items"]
+        contact_id = next(
+            i["contact"]["id"] for i in queue if i["contact"]["first_name"] == "Promotina"
+        )
+
+        # A call without the flag leaves it a call target, however it went.
+        client.post(
+            "/calls",
+            json={"contact_id": contact_id, "outcome": "interested"},
+            headers=carol_h,
+        )
+        assert client.get("/contacts?q=Promotina", headers=owner_h).json()["total"] == 0
+
+        client.post(
+            "/calls",
+            json={"contact_id": contact_id, "outcome": "interested", "marked_lead": True},
+            headers=carol_h,
+        )
+        promoted = client.get("/contacts?q=Promotina", headers=owner_h).json()
+        assert [c["id"] for c in promoted["items"]] == [contact_id]
+    finally:
+        _purge_contacts("9768300%")
+
+
+def test_batch_reports_what_the_list_produced(client, owner_h, carol_h, seeded):
+    rows = [
+        ["Name", "Mobile"],
+        ["Batch One", "9768400001"],
+        ["Batch Two", "9768400002"],
+        ["Batch Three", "9768400003"],
+    ]
+    try:
+        created = client.post(
+            "/contacts/bulk-import",
+            files=_upload(rows),
+            data={"assign_to": [str(seeded["carol_id"])], "name": "Vendor B"},
+            headers=owner_h,
+        ).json()
+        batch_id = created["batch_id"]
+        assert created["batch_name"] == "Vendor B"
+
+        queue = client.get("/call-queue?limit=50", headers=carol_h).json()["items"]
+        ours = [i for i in queue if i["contact"]["first_name"] == "Batch"]
+        assert len(ours) == 3
+
+        # Two called, one of those flagged.
+        client.post(
+            "/calls",
+            json={"contact_id": ours[0]["contact"]["id"], "outcome": "connected",
+                  "marked_lead": True},
+            headers=carol_h,
+        )
+        client.post(
+            "/calls",
+            json={"contact_id": ours[1]["contact"]["id"], "outcome": "not_reachable"},
+            headers=carol_h,
+        )
+
+        batch = client.get(f"/lead-batches/{batch_id}", headers=owner_h).json()
+        assert batch["size"] == 3
+        assert batch["called"] == 2
+        assert batch["uncalled"] == 1
+        assert batch["reached"] == 1
+        assert batch["leads"] == 1
+        # Leads per number actually called, not per row in the file — dividing
+        # by file size would punish a good list nobody has finished.
+        assert batch["conversion_rate"] == pytest.approx(0.5)
+        assert batch["reach_rate"] == pytest.approx(0.5)
+    finally:
+        _purge_contacts("9768400%")
+
+
+def test_an_untouched_list_has_no_rate_rather_than_zero(client, owner_h, seeded):
+    """Null, not 0. "Nobody has started" and "this failed" want opposite actions."""
+    rows = [["Name", "Mobile"], ["Untouchia Sethuraman", "9768500001"]]
+    try:
+        created = client.post(
+            "/contacts/bulk-import",
+            files=_upload(rows),
+            data={"assign_to": [str(seeded["carol_id"])], "name": "Vendor C"},
+            headers=owner_h,
+        ).json()
+        batch = client.get(
+            f"/lead-batches/{created['batch_id']}", headers=owner_h
+        ).json()
+        assert batch["called"] == 0
+        assert batch["conversion_rate"] is None
+        assert batch["reach_rate"] is None
+    finally:
+        _purge_contacts("9768500%")
+
+
+def test_staff_cannot_see_database_performance(client, alice_h, carol_h):
+    """How the firm sources leads is the owner's business.
+
+    Refused by the missing capability, not by hiding the screen — the same
+    posture SECURITY_MODEL.md §2 asks for everywhere else.
+    """
+    for headers in (alice_h, carol_h):
+        assert client.get("/lead-batches", headers=headers).status_code == 403

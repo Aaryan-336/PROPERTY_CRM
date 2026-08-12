@@ -40,6 +40,10 @@ export function CallConsole({
   const [temperature, setTemperature] = useState<Temperature | null>(null);
   const [notes, setNotes] = useState("");
   const [flagged, setFlagged] = useState(false);
+  // The one action that turns a number off a bought list into a lead. Never
+  // inferred from the outcome: "interested" on a cold call is very often just
+  // politeness, and a pipeline full of those is worse than an empty one.
+  const [isLead, setIsLead] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [logged, setLogged] = useState<{ at: string; name: string } | null>(null);
@@ -87,6 +91,7 @@ export function CallConsole({
     setTemperature(null);
     setNotes("");
     setFlagged(false);
+    setIsLead(false);
     setError(null);
   }
 
@@ -109,6 +114,7 @@ export function CallConsole({
         temperature,
         notes: notes.trim() || null,
         flagged_for_owner: flagged,
+        marked_lead: isLead,
       }),
     }).catch(() => null);
 
@@ -297,6 +303,38 @@ export function CallConsole({
           aria-label="Remark"
           className="mt-4 w-full resize-none rounded-tile border border-hairline bg-card px-4 py-3 text-[16px] outline-none focus:border-sandstone focus:ring-2 focus:ring-sandstone-soft"
         />
+
+        {/* Placed above "flag for owner" because it is the more common and
+            more consequential of the two: escalation is rare, deciding
+            someone is worth pursuing is the job. */}
+        <button
+          type="button"
+          onClick={() => setIsLead(!isLead)}
+          aria-pressed={isLead}
+          className={`tap mt-4 flex w-full items-center justify-between rounded-tile border px-4 text-sm font-semibold transition-colors ${
+            isLead
+              ? "border-teal bg-teal-soft text-teal"
+              : "border-hairline bg-card text-ink"
+          }`}
+        >
+          <span className="min-w-0 text-left">
+            <span className="block">Mark as a lead</span>
+            <span className="block text-[11px] font-normal text-slate">
+              Adds them to the leads pipeline
+            </span>
+          </span>
+          <span
+            className={`flex h-6 w-11 shrink-0 items-center rounded-pill px-0.5 transition-colors ${
+              isLead ? "bg-teal" : "bg-hairline"
+            }`}
+          >
+            <span
+              className={`h-5 w-5 rounded-full bg-white transition-transform ${
+                isLead ? "translate-x-5" : ""
+              }`}
+            />
+          </span>
+        </button>
 
         <button
           type="button"

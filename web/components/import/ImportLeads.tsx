@@ -38,6 +38,10 @@ export function ImportLeads({ staff }: { staff: UserWorkload[] }) {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [selected, setSelected] = useState<number[]>([]);
+  // What this database gets called on the performance cards. Defaulted from
+  // the filename because "leads_final_v3.xlsx" is at least recognisable, and a
+  // required field here would just get filled with the filename anyway.
+  const [name, setName] = useState("");
   const [busy, setBusy] = useState<"preview" | "import" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
@@ -55,6 +59,7 @@ export function ImportLeads({ staff }: { staff: UserWorkload[] }) {
     setResult(null);
     setError(null);
     setSelected([]);
+    setName("");
     if (fileRef.current) fileRef.current.value = "";
   }
 
@@ -85,7 +90,7 @@ export function ImportLeads({ staff }: { staff: UserWorkload[] }) {
   async function runImport() {
     if (!file) return;
     if (selected.length === 0) {
-      setError("Choose at least one person to receive these leads.");
+      setError("Choose at least one person to receive these numbers.");
       return;
     }
     setBusy("import");
@@ -93,6 +98,7 @@ export function ImportLeads({ staff }: { staff: UserWorkload[] }) {
 
     const body = new FormData();
     body.append("file", file);
+    body.append("name", name.trim() || file.name);
     for (const id of selected) body.append("assign_to", String(id));
 
     const res = await fetch("/api/crm/contacts/bulk-import", {
@@ -139,8 +145,9 @@ export function ImportLeads({ staff }: { staff: UserWorkload[] }) {
         </h1>
         <p className="mt-1 text-sm text-ink-dim">
           Upload an Excel or CSV file of names and numbers, then choose who
-          calls them. Assigned leads appear in that person&rsquo;s queue
-          straight away.
+          calls them. They appear in that person&rsquo;s queue straight away —
+          as numbers to call, not as leads. A number becomes a lead when the
+          caller flags it.
         </p>
       </InkCard>
 
@@ -291,9 +298,25 @@ export function ImportLeads({ staff }: { staff: UserWorkload[] }) {
           {/* -------------------------------------------------------- step 3 */}
           <Card className="p-5">
             <SectionHeading
-              title="3 · Assign the leads"
+              title="3 · Name it and assign it"
               hint="Tick everyone who should get a share. Rows are dealt out evenly."
             />
+
+            <label className="mb-4 block">
+              <span className="mb-1.5 block text-xs font-semibold text-slate">
+                Database name
+              </span>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder={file?.name ?? "e.g. Andheri enquiries — March"}
+                className="w-full rounded-tile border border-hairline bg-card px-4 py-3 text-[16px] outline-none focus:border-sandstone focus:ring-2 focus:ring-sandstone-soft"
+              />
+              <span className="mt-1.5 block text-[11px] text-slate">
+                How this list is labelled when you compare it against the others.
+              </span>
+            </label>
 
             {assignable.length === 0 ? (
               <p className="rounded-tile bg-signal-soft px-4 py-3 text-sm text-signal">
@@ -362,7 +385,7 @@ export function ImportLeads({ staff }: { staff: UserWorkload[] }) {
                 ? "Importing…"
                 : preview.importable === 0
                   ? "Nothing to import"
-                  : `Import ${preview.importable} lead${preview.importable === 1 ? "" : "s"}`}
+                  : `Import ${preview.importable} number${preview.importable === 1 ? "" : "s"}`}
             </button>
             <p className="mt-2 text-center text-[11px] text-slate">
               Leads already in the system are skipped automatically.
@@ -374,7 +397,10 @@ export function ImportLeads({ staff }: { staff: UserWorkload[] }) {
       {/* ---------------------------------------------------------- result */}
       {result && (
         <Card className="p-5">
-          <SectionHeading title="Imported" hint="These leads are in the queue now" />
+          <SectionHeading
+            title="Imported"
+            hint={`${result.batch_name} — in the queue now`}
+          />
           <div className="mb-4 grid grid-cols-3 gap-2.5">
             <MetricTile label="Imported" value={result.imported} />
             <MetricTile label="Already known" value={result.duplicates} />
@@ -388,7 +414,7 @@ export function ImportLeads({ staff }: { staff: UserWorkload[] }) {
               >
                 <span className="truncate text-sm text-ink">{a.name}</span>
                 <span className="tabular shrink-0 text-sm font-semibold text-ink">
-                  {a.assigned} lead{a.assigned === 1 ? "" : "s"}
+                  {a.assigned} number{a.assigned === 1 ? "" : "s"}
                 </span>
               </li>
             ))}
