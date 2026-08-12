@@ -30,6 +30,11 @@ What that means in practice:
 
 ## Setup
 
+Needs **Node 22.9+** — the npm scripts load `.env` with Node's own
+`--env-file-if-exists` rather than pulling in a dependency for it. The
+`-if-exists` form matters in a deployment, where the config arrives as real
+environment variables and there is no file to read.
+
 ```bash
 cd gateway
 npm install
