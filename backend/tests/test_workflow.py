@@ -231,7 +231,7 @@ def test_call_queue_puts_overdue_callbacks_first(client, carol_h, seeded):
             "due_at": overdue.isoformat(),
         },
     )
-    queue = client.get("/call-queue", headers=carol_h).json()
+    queue = client.get("/call-queue", headers=carol_h).json()["items"]
     assert queue[0]["priority"] == 1
     assert queue[0]["reason"] == "Callback overdue"
     assert queue[0]["contact"]["id"] == seeded["carol_lead"]
@@ -243,7 +243,7 @@ def test_cold_caller_queue_contains_only_their_own_leads(client, carol_h, seeded
     Asserted through the queue rather than the contact list, because the list
     is no longer readable by this role at all.
     """
-    queue = client.get("/call-queue", headers=carol_h).json()
+    queue = client.get("/call-queue", headers=carol_h).json()["items"]
     ids = {item["contact"]["id"] for item in queue}
     mine = {seeded["carol_lead"]}
     assert ids <= mine or seeded["carol_lead"] in ids
@@ -258,7 +258,7 @@ def test_queue_carries_only_a_name_and_a_number(client, carol_h):
     *response*, not merely hidden in the UI — so there is nothing to read off
     the wire.
     """
-    queue = client.get("/call-queue", headers=carol_h).json()
+    queue = client.get("/call-queue", headers=carol_h).json()["items"]
     assert queue, "seed data should leave Carol something to call"
     for item in queue:
         assert set(item["contact"]) == {"id", "first_name", "last_name", "phone"}
@@ -355,3 +355,46 @@ def test_cold_caller_cannot_create_listings(client, carol_h):
 def test_unauthenticated_requests_are_rejected(client):
     for path in ("/contacts", "/properties", "/call-queue", "/audit-log"):
         assert client.get(path).status_code == 401
+
+
+def test_team_performance_is_owner_only(client, alice_h, carol_h):
+    """One staff member's numbers are not another's business."""
+    assert client.get("/team/performance", headers=alice_h).status_code == 403
+    assert client.get("/team/performance", headers=carol_h).status_code == 403
+
+
+def test_team_performance_reports_per_person_numbers(client, owner_h, carol_h, seeded):
+    """Counts come back attributed, and rates only where there is a denominator."""
+    client.post(
+        "/calls",
+        json={"contact_id": seeded["carol_lead"], "outcome": "connected"},
+        headers=carol_h,
+    )
+    data = client.get("/team/performance?days=30", headers=owner_h).json()
+
+    carol = next(s for s in data["staff"] if s["user"]["id"] == seeded["carol_id"])
+    assert carol["calls"] >= 1
+    assert carol["calls_by_outcome"].get("connected", 0) >= 1
+    assert 0 < carol["connect_rate"] <= 1
+    assert data["total_calls"] >= carol["calls"]
+
+
+def test_rates_are_null_not_zero_without_a_denominator(client, owner_h, seeded):
+    """"No calls yet" and "0% connect rate" call for opposite conversations."""
+    resp = client.post(
+        "/users",
+        json={
+            "name": "Fresh Hire",
+            "email": "fresh.hire@t.local",
+            "password": "pw12345678",
+            "role": "cold_caller",
+        },
+        headers=owner_h,
+    )
+    new_id = resp.json()["id"]
+
+    data = client.get("/team/performance?days=30", headers=owner_h).json()
+    fresh = next(s for s in data["staff"] if s["user"]["id"] == new_id)
+    assert fresh["calls"] == 0
+    assert fresh["connect_rate"] is None
+    assert fresh["median_response_hours"] is None

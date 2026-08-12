@@ -212,6 +212,35 @@ export type QueueContact = {
   phone: string | null;
 };
 
+export type StaffPerformance = {
+  user: User;
+  calls: number;
+  calls_by_outcome: Record<string, number>;
+  connected: number;
+  /** Fraction, or null when they have made no calls — which is not 0%. */
+  connect_rate: number | null;
+  showings: number;
+  escalations: number;
+  leads_assigned: number;
+  leads_by_stage: Record<string, number>;
+  closed: number;
+  conversion_rate: number | null;
+  tasks_open: number;
+  tasks_overdue: number;
+  /** Median hours from lead created to their first call on it. */
+  median_response_hours: number | null;
+  last_active_at: string | null;
+};
+
+export type TeamPerformance = {
+  days: number;
+  since: string;
+  staff: StaffPerformance[];
+  total_calls: number;
+  total_showings: number;
+  total_closed: number;
+};
+
 export type QueueItem = {
   contact: QueueContact;
   /** Why this lead surfaced now. Operational, not client data. */

@@ -169,6 +169,29 @@ def _upload(rows):
     return {"file": ("leads.xlsx", sheet(rows), "application/vnd.ms-excel")}
 
 
+def _purge_contacts(phone_like: str) -> None:
+    """Remove rows a test created, and the call logs and tasks pointing at them."""
+    from sqlalchemy import delete, select
+
+    from app.db import SessionLocal, system_scope
+    from app.models import CallLog, Contact, Task
+
+    db = SessionLocal()
+    with system_scope():
+        ids = [
+            row[0]
+            for row in db.execute(
+                select(Contact.id).where(Contact.phone.like(phone_like))
+            )
+        ]
+        if ids:
+            for model in (CallLog, Task):
+                db.execute(delete(model).where(model.contact_id.in_(ids)))
+            db.execute(delete(Contact).where(Contact.id.in_(ids)))
+            db.commit()
+    db.close()
+
+
 LIST = [
     ["Name", "Mobile", "Area"],
     ["Import One", "9700000001", "Powai"],
@@ -244,7 +267,7 @@ def test_imported_leads_appear_in_that_callers_queue(client, owner_h, carol_h, s
         data={"assign_to": [str(seeded["carol_id"])]},
         headers=owner_h,
     )
-    queue = client.get("/call-queue?limit=50", headers=carol_h).json()
+    queue = client.get("/call-queue?limit=50", headers=carol_h).json()["items"]
     names = [item["contact"]["first_name"] for item in queue]
     assert "Queue" in names or any("Queue" in n for n in names)
 
@@ -305,3 +328,49 @@ def test_import_is_audited_with_counts_and_recipients(client, owner_h, seeded):
     assert imports, "a bulk write of contact data must be audited"
     assert imports[0]["detail"]["imported_count"] >= 1
     assert seeded["carol_id"] in imports[0]["detail"]["assigned_to"]
+
+
+def test_queue_reports_the_true_total_and_pages_beyond_the_cap(
+    client, owner_h, carol_h, seeded
+):
+    """A bulk import must not look like it failed.
+
+    The per-request cap is an anti-scraping control and stays at 50, but the
+    caller has to be able to see that there are more than 50 and work through
+    them. Before this, an owner importing 280 leads saw a queue of 50 older
+    ones and reasonably concluded the import had gone nowhere.
+    """
+    rows = [["Name", "Mobile"]] + [
+        [f"Bulk {n}", f"96000{n:05d}"] for n in range(60)
+    ]
+    client.post(
+        "/contacts/bulk-import",
+        files=_upload(rows),
+        data={"assign_to": [str(seeded["carol_id"])]},
+        headers=owner_h,
+    )
+
+    first = client.get("/call-queue?limit=50", headers=carol_h).json()
+    assert first["total"] > 50, "the total must reflect the queue, not the page"
+    assert len(first["items"]) == 50
+    assert first["has_more"] is True
+
+    second = client.get("/call-queue?limit=50&offset=50", headers=carol_h).json()
+    assert second["items"], "the rest of the queue must be reachable"
+    assert second["total"] == first["total"]
+
+    seen = {i["contact"]["id"] for i in first["items"]}
+    assert not seen & {i["contact"]["id"] for i in second["items"]}, (
+        "pages must not repeat leads"
+    )
+
+    # Hard-delete the rows this test created. The seeded database is
+    # session-scoped, and leaving 60 extra contacts behind changes what other
+    # tests see on their first page — which is a failure in them, reported far
+    # from the cause.
+    _purge_contacts("96000%")
+
+
+def test_queue_request_cap_still_holds(client, carol_h):
+    """Pagination must not become a way to pull the whole book in one call."""
+    assert client.get("/call-queue?limit=500", headers=carol_h).status_code == 422

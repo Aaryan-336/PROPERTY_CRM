@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 import { PlusIcon } from "@/components/icons";
@@ -52,14 +53,22 @@ export function TeamBoard({
               Add or remove staff, and see what each person is carrying.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => setAdding(true)}
-            className="tap flex items-center gap-2 rounded-pill bg-sandstone px-5 text-sm font-semibold text-white"
-          >
-            <PlusIcon className="h-4 w-4" />
-            Add staff
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/team/performance"
+              className="tap flex items-center rounded-pill border border-ink-line px-4 text-sm font-semibold text-ink-dim"
+            >
+              Performance
+            </Link>
+            <button
+              type="button"
+              onClick={() => setAdding(true)}
+              className="tap flex items-center gap-2 rounded-pill bg-sandstone px-5 text-sm font-semibold text-white"
+            >
+              <PlusIcon className="h-4 w-4" />
+              Add staff
+            </button>
+          </div>
         </div>
 
         <div className="mt-5 grid grid-cols-2 gap-2.5 lg:grid-cols-4">

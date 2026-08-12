@@ -1,12 +1,13 @@
 import { QueueCard } from "@/components/QueueCard";
 import { EmptyState, SectionHeading } from "@/components/ui";
 import { api } from "@/lib/api";
-import type { QueueItem } from "@/lib/types";
+import type { Paged, QueueItem } from "@/lib/types";
 
 export const metadata = { title: "Call queue · Balaji CRM" };
 
 export default async function QueuePage() {
-  const queue = await api<QueueItem[]>("/call-queue?limit=50");
+  const page = await api<Paged<QueueItem>>("/call-queue?limit=50");
+  const queue = page.items;
   const [next, ...rest] = queue;
 
   // Grouped by the reason each lead surfaced, so the order is legible rather
@@ -23,7 +24,8 @@ export default async function QueuePage() {
       <header>
         <h1 className="font-display text-2xl leading-tight text-ink">Call queue</h1>
         <p className="tabular mt-0.5 text-sm text-slate">
-          {queue.length} lead{queue.length === 1 ? "" : "s"} · your assigned leads only
+          {page.total} lead{page.total === 1 ? "" : "s"} · your assigned leads only
+          {page.has_more ? ` · showing the first ${queue.length}` : ""}
         </p>
       </header>
 

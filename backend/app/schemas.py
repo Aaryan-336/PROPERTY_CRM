@@ -70,6 +70,55 @@ class UserWorkload(BaseModel):
     last_active_at: datetime | None = None
 
 
+class StaffPerformance(BaseModel):
+    """One staff member's numbers over a window.
+
+    FEATURE_LIST P2, "Team performance dashboard: leads per agent, conversion
+    rate, response time, visit-to-close ratio".
+
+    Counts are raw so the owner can judge them; the two derived figures
+    (`connect_rate`, `conversion_rate`) are returned as fractions and are
+    ``None`` rather than zero when the denominator is empty — a caller who has
+    made no calls has no connect rate, which is a different statement from a
+    connect rate of 0%.
+    """
+
+    user: UserOut
+
+    calls: int = 0
+    calls_by_outcome: dict[str, int] = Field(default_factory=dict)
+    connected: int = 0
+    connect_rate: float | None = None
+
+    showings: int = 0
+    escalations: int = 0
+
+    leads_assigned: int = 0
+    leads_by_stage: dict[str, int] = Field(default_factory=dict)
+    closed: int = 0
+    conversion_rate: float | None = None
+
+    tasks_open: int = 0
+    tasks_overdue: int = 0
+
+    # Median hours between a lead being created and this person's first call on
+    # it. Median, not mean: one lead left for three weeks would drag an average
+    # far enough to hide an otherwise responsive caller.
+    median_response_hours: float | None = None
+    last_active_at: datetime | None = None
+
+
+class TeamPerformance(BaseModel):
+    days: int
+    since: datetime
+    staff: list[StaffPerformance]
+    # Firm-wide totals for the same window, so a person's numbers can be read
+    # against the team rather than in isolation.
+    total_calls: int = 0
+    total_showings: int = 0
+    total_closed: int = 0
+
+
 class ReassignLeadsRequest(BaseModel):
     to_user_id: int = Field(
         description="Staff member who inherits the leads. Must be active."

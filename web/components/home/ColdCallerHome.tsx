@@ -14,11 +14,11 @@ import type { Paged, QueueItem, Task, User } from "@/lib/types";
  */
 export async function ColdCallerHome({ user }: { user: User }) {
   const [queue, tasks] = await Promise.all([
-    api<QueueItem[]>("/call-queue?limit=25"),
+    api<Paged<QueueItem>>("/call-queue?limit=25"),
     api<Paged<Task>>("/tasks?status=pending&limit=50"),
   ]);
 
-  const [next, ...rest] = queue;
+  const [next, ...rest] = queue.items;
   const overdue = tasks.items.filter(
     (t) => t.due_at && new Date(t.due_at).getTime() <= Date.now(),
   ).length;
@@ -30,12 +30,12 @@ export async function ColdCallerHome({ user }: { user: User }) {
           Your queue
         </p>
         <h1 className="font-display mt-1.5 text-2xl leading-tight text-white">
-          {queue.length
-            ? `${queue.length} lead${queue.length === 1 ? "" : "s"} to call`
+          {queue.total
+            ? `${queue.total} lead${queue.total === 1 ? "" : "s"} to call`
             : "Queue is clear"}
         </h1>
         <div className="mt-5 grid grid-cols-2 gap-2.5">
-          <MetricTile label="In queue" value={queue.length} ink />
+          <MetricTile label="In queue" value={queue.total} ink />
           <MetricTile
             label="Callbacks due"
             value={overdue}

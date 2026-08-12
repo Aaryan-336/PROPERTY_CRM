@@ -218,7 +218,7 @@ def list_escalations(
 
 @router.get(
     "/call-queue",
-    response_model=list[QueueItem],
+    response_model=Paged[QueueItem],
     dependencies=[Depends(rate_limit_lists)],
 )
 def call_queue(
@@ -227,7 +227,8 @@ def call_queue(
     principal: PrincipalDep,
     request: Request,
     limit: int = Query(default=25, ge=1, le=50),
-) -> list[QueueItem]:
+    offset: int = Query(default=0, ge=0),
+) -> Paged[QueueItem]:
     """The cold caller's prioritized queue, scoped to their assigned leads.
 
     Ordering, in the sequence agreed for Phase 1:
@@ -239,6 +240,13 @@ def call_queue(
 
     Leads that are closed, lost, not interested, or a wrong number drop out.
     Every row carries the reason it surfaced, so the caller can see why.
+
+    Paged, and returns the true total. The per-request cap stays (it is the
+    anti-scraping control from SECURITY_MODEL.md §4), but a caller handed a
+    list of 300 imported leads has to be able to work through all of them --
+    and, just as importantly, to see that there are 300. Capping at 50 with no
+    total made a bulk import look like it had silently failed, because the
+    first page is dominated by older leads with overdue callbacks.
     """
     now = datetime.now(timezone.utc)
 
@@ -289,12 +297,17 @@ def call_queue(
             Contact.lead_score.desc(),
             Contact.created_at.asc(),
         )
-        .limit(limit)
     )
 
-    rows = db.execute(stmt).all()
+    total = db.execute(
+        select(func.count()).select_from(stmt.order_by(None).subquery())
+    ).scalar_one()
 
-    request.state.audit.add(returned_count=len(rows), queue=True)
+    rows = db.execute(stmt.limit(limit).offset(offset)).all()
+
+    request.state.audit.add(
+        returned_count=len(rows), total_in_queue=total, queue=True
+    )
 
     reasons = {
         1: "Callback overdue",
@@ -320,7 +333,14 @@ def call_queue(
                 due_at=due_at,
             )
         )
-    return items
+
+    return Paged[QueueItem](
+        items=items,
+        total=total,
+        limit=limit,
+        offset=offset,
+        has_more=offset + len(items) < total,
+    )
 
 
 def _serialize_calls(

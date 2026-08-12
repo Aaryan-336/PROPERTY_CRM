@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ChevronRight, PhoneIcon } from "@/components/icons";
 import { InkCard, StatusPill } from "@/components/ui";
@@ -25,9 +25,17 @@ type Temperature = (typeof TEMPERATURES)[number]["value"];
  * primary action in the bottom third on mobile — the dial button and the
  * outcome chips both sit below the lead detail for that reason.
  */
-export function CallConsole({ queue }: { queue: QueueItem[] }) {
+export function CallConsole({
+  queue: initial,
+  total,
+}: {
+  queue: QueueItem[];
+  total: number;
+}) {
   const router = useRouter();
+  const [queue, setQueue] = useState<QueueItem[]>(initial);
   const [index, setIndex] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [outcome, setOutcome] = useState<Outcome>("connected");
   const [temperature, setTemperature] = useState<Temperature | null>(null);
   const [notes, setNotes] = useState("");
@@ -40,7 +48,39 @@ export function CallConsole({ queue }: { queue: QueueItem[] }) {
   const [doneThisSession, setDoneThisSession] = useState(0);
 
   const item = queue[index];
-  const remaining = queue.length - index;
+  // Against the real queue size, not the page in hand — a caller handed 281
+  // imported leads needs to see 281, not 50.
+  const remaining = total - index;
+
+  /**
+   * Pull the next page in before the caller reaches the end of this one.
+   *
+   * The per-request cap is an anti-scraping control and stays; this just means
+   * a long queue can actually be worked through, without the caller hitting an
+   * invisible wall at 50 and assuming the rest were never assigned.
+   */
+  async function loadMore() {
+    if (loadingMore || queue.length >= total) return;
+    setLoadingMore(true);
+    const res = await fetch(`/api/crm/call-queue?limit=50&offset=${queue.length}`)
+      .catch(() => null);
+    if (res?.ok) {
+      const page = (await res.json()) as { items: QueueItem[] };
+      // De-dupe by id: logging a call reorders the server-side queue, so a
+      // later page can repeat someone already in hand.
+      setQueue((current) => {
+        const seen = new Set(current.map((q) => q.contact.id));
+        return [...current, ...page.items.filter((q) => !seen.has(q.contact.id))];
+      });
+    }
+    setLoadingMore(false);
+  }
+
+  useEffect(() => {
+    // Five from the end is enough warning at calling pace.
+    if (queue.length - index <= 5) void loadMore();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [index, queue.length]);
 
   function resetForm() {
     setOutcome("connected");
@@ -147,7 +187,7 @@ export function CallConsole({ queue }: { queue: QueueItem[] }) {
             <div
               className="h-full rounded-pill bg-sandstone transition-all"
               style={{
-                width: `${queue.length ? (index / queue.length) * 100 : 0}%`,
+                width: `${total ? (index / total) * 100 : 0}%`,
               }}
             />
           </div>

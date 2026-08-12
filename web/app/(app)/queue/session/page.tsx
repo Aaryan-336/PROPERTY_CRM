@@ -1,6 +1,6 @@
 import { CallConsole } from "@/components/queue/CallConsole";
 import { api } from "@/lib/api";
-import type { QueueItem } from "@/lib/types";
+import type { Paged, QueueItem } from "@/lib/types";
 
 export const metadata = { title: "Calling · Balaji CRM" };
 
@@ -16,6 +16,6 @@ export const metadata = { title: "Calling · Balaji CRM" };
  * Scoped by the API to this caller's own assigned leads, like every other read.
  */
 export default async function CallSessionPage() {
-  const queue = await api<QueueItem[]>("/call-queue?limit=50");
-  return <CallConsole queue={queue} />;
+  const page = await api<Paged<QueueItem>>("/call-queue?limit=50");
+  return <CallConsole queue={page.items} total={page.total} />;
 }

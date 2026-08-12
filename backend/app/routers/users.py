@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import func, select
 
 from app.db import system_scope
@@ -11,6 +11,8 @@ from app.errors import bad_request, not_found
 from app.models import Activity, CallLog, Contact, PropertyInterest, Task, User
 from app.schemas import (
     ReassignLeadsRequest,
+    StaffPerformance,
+    TeamPerformance,
     ReassignLeadsResponse,
     UserCreate,
     UserOut,
@@ -147,6 +149,182 @@ def team_workload(scoped: ScopedDep, db: SessionDep) -> list[UserWorkload]:
         )
         for u in users
     ]
+
+
+@router.get(
+    "/team/performance",
+    response_model=TeamPerformance,
+    dependencies=[Depends(require("users.manage"))],
+)
+def team_performance(
+    scoped: ScopedDep,
+    db: SessionDep,
+    days: int = Query(default=30, ge=1, le=365),
+) -> TeamPerformance:
+    """Per-person call, showing and conversion numbers over a window.
+
+    The PRD's owner story is "I want to see exactly which agent showed which
+    property to which client, and spot underperformance". The activity feed
+    answers the first half; this answers the second, by putting everyone's
+    numbers side by side over the same period.
+
+    Everything is computed with grouped aggregates rather than per-user
+    queries, so the cost does not scale with headcount.
+    """
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    now = datetime.now(timezone.utc)
+
+    users = (
+        db.execute(scoped.users(include_deactivated=True).order_by(User.name))
+        .scalars()
+        .all()
+    )
+    ids = [u.id for u in users]
+    if not ids:
+        return TeamPerformance(days=days, since=since, staff=[])
+
+    def pairs(stmt) -> dict:
+        return {(row[0], row[1]): row[2] for row in db.execute(stmt)}
+
+    def tally(stmt) -> dict[int, int]:
+        return {row[0]: row[1] for row in db.execute(stmt)}
+
+    # Owner-scoped by the capability above; these are firm-wide aggregates.
+    with system_scope():
+        by_outcome = pairs(
+            select(CallLog.caller_id, CallLog.outcome, func.count())
+            .where(CallLog.caller_id.in_(ids))
+            .where(CallLog.created_at >= since)
+            .group_by(CallLog.caller_id, CallLog.outcome)
+        )
+        escalations = tally(
+            select(CallLog.caller_id, func.count())
+            .where(CallLog.caller_id.in_(ids))
+            .where(CallLog.created_at >= since)
+            .where(CallLog.flagged_for_owner.is_(True))
+            .group_by(CallLog.caller_id)
+        )
+        showings = tally(
+            select(PropertyInterest.shown_by_agent_id, func.count())
+            .where(PropertyInterest.shown_by_agent_id.in_(ids))
+            .where(PropertyInterest.shown_at >= since)
+            .group_by(PropertyInterest.shown_by_agent_id)
+        )
+        by_stage = pairs(
+            select(Contact.owner_id, Contact.stage, func.count())
+            .where(Contact.owner_id.in_(ids))
+            .where(Contact.deleted_at.is_(None))
+            .group_by(Contact.owner_id, Contact.stage)
+        )
+        tasks_open = tally(
+            select(Task.assigned_to, func.count())
+            .where(Task.assigned_to.in_(ids))
+            .where(Task.status == "pending")
+            .group_by(Task.assigned_to)
+        )
+        tasks_overdue = tally(
+            select(Task.assigned_to, func.count())
+            .where(Task.assigned_to.in_(ids))
+            .where(Task.status == "pending")
+            .where(Task.due_at.is_not(None))
+            .where(Task.due_at <= now)
+            .group_by(Task.assigned_to)
+        )
+        last_active = tally(
+            select(CallLog.caller_id, func.max(CallLog.created_at))
+            .where(CallLog.caller_id.in_(ids))
+            .group_by(CallLog.caller_id)
+        )
+
+        # Median hours from a lead being created to this person's first call on
+        # it. The inner query finds each lead's first call; the outer takes the
+        # median per caller, which Postgres does natively.
+        first_call = (
+            select(
+                CallLog.caller_id.label("caller_id"),
+                CallLog.contact_id.label("contact_id"),
+                func.min(CallLog.created_at).label("first_at"),
+            )
+            .where(CallLog.caller_id.in_(ids))
+            .where(CallLog.created_at >= since)
+            .where(CallLog.contact_id.is_not(None))
+            .group_by(CallLog.caller_id, CallLog.contact_id)
+            .subquery()
+        )
+        response = {
+            row[0]: float(row[1])
+            for row in db.execute(
+                select(
+                    first_call.c.caller_id,
+                    func.percentile_cont(0.5)
+                    .within_group(
+                        func.extract(
+                            "epoch", first_call.c.first_at - Contact.created_at
+                        )
+                        / 3600.0
+                    )
+                    .label("median_hours"),
+                )
+                .select_from(first_call)
+                .join(Contact, Contact.id == first_call.c.contact_id)
+                .group_by(first_call.c.caller_id)
+            )
+            if row[1] is not None
+        }
+
+    staff: list[StaffPerformance] = []
+    for user in users:
+        outcomes = {
+            outcome: count
+            for (uid, outcome), count in by_outcome.items()
+            if uid == user.id and outcome
+        }
+        calls = sum(outcomes.values())
+        # "Reached a human" — the outcomes that represent an actual
+        # conversation, which is what a caller is really measured on.
+        connected = sum(
+            outcomes.get(o, 0)
+            for o in ("connected", "interested", "callback_requested")
+        )
+
+        stages = {
+            stage: count
+            for (uid, stage), count in by_stage.items()
+            if uid == user.id and stage
+        }
+        assigned = sum(stages.values())
+        closed = stages.get("closed", 0)
+
+        staff.append(
+            StaffPerformance(
+                user=UserOut.model_validate(user),
+                calls=calls,
+                calls_by_outcome=outcomes,
+                connected=connected,
+                connect_rate=round(connected / calls, 4) if calls else None,
+                showings=showings.get(user.id, 0),
+                escalations=escalations.get(user.id, 0),
+                leads_assigned=assigned,
+                leads_by_stage=stages,
+                closed=closed,
+                conversion_rate=round(closed / assigned, 4) if assigned else None,
+                tasks_open=tasks_open.get(user.id, 0),
+                tasks_overdue=tasks_overdue.get(user.id, 0),
+                median_response_hours=(
+                    round(response[user.id], 2) if user.id in response else None
+                ),
+                last_active_at=last_active.get(user.id),
+            )
+        )
+
+    return TeamPerformance(
+        days=days,
+        since=since,
+        staff=staff,
+        total_calls=sum(s.calls for s in staff),
+        total_showings=sum(s.showings for s in staff),
+        total_closed=sum(s.closed for s in staff),
+    )
 
 
 @router.post(

@@ -16,6 +16,7 @@ Base: REST, JSON, JWT bearer auth. Every endpoint below is subject to the role s
 | GET | `/users` | Owner: all; Manager: own team |
 | POST | `/users` | Owner only — create staff account |
 | PATCH | `/users/{id}` | Update role, manager_id, is_available, or deactivate |
+| GET | `/team/performance?days=30` | Owner only — per-person calls (broken down by outcome), connect rate, showings, leads by stage, conversion rate, open/overdue follow-ups, and median hours from lead arrival to first call. Grouped aggregates, so cost does not scale with headcount. |
 | GET | `/users/workload` | Owner only — every staff member with live leads, open/overdue follow-ups, calls and showings in the last 7 days. Powers the team screen so "remove this person" is an informed decision. |
 | POST | `/users/{id}/reassign-leads` | Owner only — move every live lead to another active staff member. Closed/lost leads stay put. Audited as `reassign`, and each move writes an activity row on the lead. |
 
@@ -59,7 +60,7 @@ Property list filters also accept `bhk`, `source` (`manual` / `whatsapp_group`) 
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/call-queue` | Cold caller's prioritized queue of assigned leads |
+| GET | `/call-queue` | Cold caller's prioritized queue of assigned leads. Paged (`limit` ≤ 50, `offset`) and returns the true `total` — the per-request cap is the anti-scraping control, but a caller handed 300 imported leads must be able to see and work all of them. |
 | POST | `/calls` | Log a call: contact_id, outcome, temperature, notes, flagged_for_owner |
 | GET | `/calls?contact_id=` | Call history for a contact |
 | GET | `/owner/escalations` | Owner inbox of flagged calls (Owner/Manager only) |
