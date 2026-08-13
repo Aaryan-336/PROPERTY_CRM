@@ -148,3 +148,11 @@ export const KeyIcon = (p: IconProps) => (
     <path d="m10.7 12.3 8.3-8.3M17 6l2 2M14 9l2 2" />
   </Svg>
 );
+
+export const MoreIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
+    <circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none" />
+  </Svg>
+);

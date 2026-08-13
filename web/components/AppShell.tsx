@@ -3,14 +3,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRouter } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import {
   BuildingIcon,
+  ChevronRight,
   FeedIcon,
   FlagIcon,
   HomeIcon,
   LogoutIcon,
+  MoreIcon,
   PeopleIcon,
   PhoneIcon,
   PulseIcon,
@@ -20,6 +22,7 @@ import {
   UploadIcon,
 } from "@/components/icons";
 import { OfflineBanner } from "@/components/OfflineBanner";
+import { Sheet } from "@/components/Sheet";
 import { Avatar } from "@/components/ui";
 import { roleLabel } from "@/lib/format";
 import type { Role, User } from "@/lib/types";
@@ -31,7 +34,8 @@ type NavItem = {
   roles: Role[];
 };
 
-/* Four to five items maximum on the mobile pill — past that, thumbs mis-tap. */
+/* Every destination, in sidebar order. What reaches the mobile pill is
+ * decided by MOBILE_LIMIT below; the rest goes behind "More". */
 const NAV: NavItem[] = [
   { href: "/", label: "Home", icon: HomeIcon, roles: ["owner", "agent", "cold_caller"] },
   { href: "/queue", label: "Queue", icon: PhoneIcon, roles: ["cold_caller"] },
@@ -47,9 +51,16 @@ const NAV: NavItem[] = [
   { href: "/audit", label: "Audit", icon: ShieldIcon, roles: ["owner"] },
 ];
 
-/* Which items earn a slot on the small screen, per role. */
+/* Which items earn a slot on the small screen, per role.
+ *
+ * Everything a role is allowed stays reachable on a phone; this only decides
+ * what is one tap away versus one tap behind "More". The owner has ten
+ * destinations and a thumb-sized pill holds five, so the split is by how often
+ * a thing is needed *while away from a desk*: escalations and the lead book are
+ * urgent in a car, the activity feed and the audit log are end-of-day reading.
+ */
 const MOBILE_LIMIT: Record<Role, string[]> = {
-  owner: ["/", "/feed", "/contacts", "/properties", "/escalations"],
+  owner: ["/", "/contacts", "/properties", "/escalations"],
   agent: ["/", "/contacts", "/properties", "/showings"],
   // A caller's whole job is the queue, and they have no access to the lead
   // book or the inventory — the API refuses both for this role, so putting
@@ -67,10 +78,21 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
   const pathname = usePathname();
   const router = useRouter();
 
+  const [moreOpen, setMoreOpen] = useState(false);
+
   const allowed = NAV.filter((item) => item.roles.includes(user.role));
-  const mobileItems = allowed.filter((item) =>
-    (MOBILE_LIMIT[user.role] ?? MOBILE_LIMIT.agent).includes(item.href),
-  );
+  const pinned = MOBILE_LIMIT[user.role] ?? MOBILE_LIMIT.agent;
+  const mobileItems = allowed.filter((item) => pinned.includes(item.href));
+  // Whatever the role may see but the pill has no room for. Derived rather
+  // than listed a second time, so a new NAV entry can never end up reachable
+  // on a laptop and invisible on a phone.
+  const overflowItems = allowed.filter((item) => !pinned.includes(item.href));
+
+  // Close the menu when navigation actually happens, not on tap: doing it in
+  // the click handler flashes the sheet away before the new page is ready.
+  useEffect(() => {
+    setMoreOpen(false);
+  }, [pathname]);
 
   async function signOut() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -177,8 +199,57 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
               </Link>
             );
           })}
+
+          {overflowItems.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setMoreOpen(true)}
+              aria-label="More"
+              aria-expanded={moreOpen}
+              className={`tap flex items-center justify-center rounded-pill px-4 transition-colors ${
+                overflowItems.some((item) => isActive(pathname, item.href))
+                  ? "bg-sandstone text-white"
+                  : "text-ink-dim"
+              }`}
+            >
+              <MoreIcon className="h-[22px] w-[22px]" />
+            </button>
+          )}
         </div>
       </nav>
+
+      {/* Everything that did not fit the pill. A sheet rather than a second row
+          of icons: these are labelled destinations reached deliberately, not
+          the four things a thumb hits without looking. */}
+      <Sheet
+        open={moreOpen}
+        onClose={() => setMoreOpen(false)}
+        title="More"
+        subtitle={`${user.name.split(" ")[0]} · ${roleLabel(user.role)}`}
+      >
+        <ul className="space-y-2">
+          {overflowItems.map(({ href, label, icon: Icon }) => {
+            const active = isActive(pathname, href);
+            return (
+              <li key={href}>
+                <Link
+                  href={href}
+                  aria-current={active ? "page" : undefined}
+                  className={`tap flex items-center gap-3 rounded-tile border px-4 text-sm font-semibold transition-colors ${
+                    active
+                      ? "border-ink bg-ink text-white"
+                      : "border-hairline bg-card text-ink"
+                  }`}
+                >
+                  <Icon className="h-5 w-5 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate text-left">{label}</span>
+                  <ChevronRight className="h-4 w-4 shrink-0 opacity-50" />
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      </Sheet>
     </div>
   );
 }

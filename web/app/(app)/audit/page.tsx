@@ -1,8 +1,11 @@
+import { redirect } from "next/navigation";
+
 import { FilterBar } from "@/components/FilterBar";
 import { Pagination } from "@/components/Pagination";
 import { ShieldIcon } from "@/components/icons";
 import { Avatar, Card, EmptyState, StatusPill, type Tone } from "@/components/ui";
 import { api, qs } from "@/lib/api";
+import { getCurrentUser } from "@/lib/session";
 import { clockTime, dayStamp, relativeTime, titleCase } from "@/lib/format";
 import type { AuditEntry, Paged, User } from "@/lib/types";
 
@@ -31,6 +34,13 @@ export default async function AuditPage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
+  // Every other owner-only page redirects rather than letting the API refuse
+  // the read: without this the 403 surfaces as an unhandled 500, which reads
+  // as a broken app rather than a closed door.
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.role !== "owner") redirect("/");
+
   const params = await searchParams;
   const limit = 50;
   const offset = Number(params.offset ?? 0);
