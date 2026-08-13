@@ -148,8 +148,18 @@ Save it now — it is not stored anywhere in readable form.
 ```
 
 Drop `--generate` to be prompted for your own password instead (it stays out of
-your shell history). The command refuses to run twice — everyone else is added
-from the **Team** screen once you can sign in.
+your shell history). The command refuses to touch an account that already
+exists — everyone else is added from the **Team** screen once you can sign in.
+
+**Locked out, or missed the password as it scrolled past?** Re-run with
+`--reset-password` to set a new one on the existing account. It is the only way
+back in: the in-app reset needs a signed-in owner, which is exactly what you
+have lost.
+
+> Putting this in a Render **start command** works but leaves the service in a
+> crash loop once the account exists — the `&&` chain fails and `uvicorn` never
+> runs, so Render reports *No open ports detected*. Revert the start command as
+> soon as you have the password.
 
 > On a *paid* instance you can skip the external URL and run the same command
 > from Render's Shell tab.

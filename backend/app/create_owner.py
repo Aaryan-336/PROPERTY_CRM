@@ -29,7 +29,7 @@ from sqlalchemy.exc import ProgrammingError
 
 from app.db import SessionLocal, system_scope
 from app.models import ROLE_OWNER, User
-from app.security import hash_password
+from app.security import hash_password, revoke_all_for_user
 
 MIN_PASSWORD_LENGTH = 8
 
@@ -54,6 +54,16 @@ def main(argv: list[str] | None = None) -> int:
         "--force",
         action="store_true",
         help="Create even if an owner already exists.",
+    )
+    parser.add_argument(
+        "--reset-password",
+        action="store_true",
+        dest="reset",
+        help=(
+            "Set a new password on an owner account that already exists. "
+            "The only way back in when nobody knows it: the in-app reset "
+            "needs a signed-in owner, which is the thing you have lost."
+        ),
     )
     args = parser.parse_args(argv)
 
@@ -97,11 +107,42 @@ def main(argv: list[str] | None = None) -> int:
                     return 3
                 raise
 
-            if db.execute(
-                select(User.id).where(User.email == email)
-            ).first():
-                print(f"A user with {email} already exists.", file=sys.stderr)
-                return 1
+            existing = db.execute(
+                select(User).where(User.email == email)
+            ).scalar_one_or_none()
+
+            if existing is not None:
+                if not args.reset:
+                    print(
+                        f"A user with {email} already exists. "
+                        "To set a new password on it, re-run with "
+                        "--reset-password.",
+                        file=sys.stderr,
+                    )
+                    return 1
+                if existing.role != ROLE_OWNER:
+                    print(
+                        f"{email} exists with role {existing.role!r}. Refusing "
+                        "to promote it to owner — change the role from the Team "
+                        "screen, where it is audited.",
+                        file=sys.stderr,
+                    )
+                    return 1
+
+                existing.password_hash = hash_password(password)
+                # An owner who deactivated themselves and is now resetting is
+                # locking themselves back in, not being re-hired.
+                existing.deleted_at = None
+                # Every live session dies. A reset means nobody knew the
+                # password; any token still working was not the owner's.
+                revoke_all_for_user(db, existing.id)
+                db.commit()
+
+                print(f"Password reset: {email}")
+                if args.generate:
+                    print(f"Password:      {password}")
+                    print("Save it now — it is not stored anywhere in readable form.")
+                return 0
 
             existing_owner = db.execute(
                 select(User.email)
