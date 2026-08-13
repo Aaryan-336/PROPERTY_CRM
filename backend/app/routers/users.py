@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import secrets
+
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -7,9 +9,19 @@ from sqlalchemy import func, select
 
 from app.db import system_scope
 from app.deps import PrincipalDep, ScopedDep, SessionDep, require
-from app.errors import bad_request, not_found
-from app.models import Activity, CallLog, Contact, PropertyInterest, Task, User
+from app.errors import ApiError, bad_request, not_found
+from app.models import (
+    ROLE_OWNER,
+    Activity,
+    CallLog,
+    Contact,
+    PropertyInterest,
+    Task,
+    User,
+)
 from app.schemas import (
+    PasswordReset,
+    PasswordResetResponse,
     ReassignLeadsRequest,
     StaffPerformance,
     TeamPerformance,
@@ -464,3 +476,72 @@ def update_user(
         deactivated=bool(deactivate), sessions_revoked=revoked
     )
     return UserOut.model_validate(user)
+
+
+@router.post(
+    "/users/{user_id}/reset-password",
+    response_model=PasswordResetResponse,
+    dependencies=[Depends(require("users.manage"))],
+)
+def reset_password(
+    user_id: int,
+    payload: PasswordReset,
+    principal: PrincipalDep,
+    db: SessionDep,
+    request: Request,
+) -> PasswordResetResponse:
+    """Owner sets a new password for a staff member who has lost theirs.
+
+    There is no email on this system and no reset link, so somebody has to be
+    able to do this or a forgotten password means a dead account. That somebody
+    is the Owner, and every use is audited: an owner who can silently take over
+    a cold caller's account is exactly the sort of thing the audit log exists
+    to make non-silent.
+
+    Refuses to touch any Owner, including the caller's own account. Two owners
+    resetting each other is a standoff rather than a hierarchy — and allowing
+    self-reset here would quietly undo `/auth/change-password`, which demands
+    the current password precisely so that a borrowed unlocked laptop cannot
+    take the account permanently. An owner changing their own password goes
+    through that endpoint and proves they know the old one.
+
+    The recovery path for a genuinely locked-out owner is
+    `app/create_owner.py --force` with database access — a deliberately higher
+    bar, and one that cannot be reached from a logged-in browser at all.
+    """
+    with system_scope():
+        user = db.get(User, user_id)
+    if user is None or user.deleted_at is not None:
+        raise not_found("User")
+
+    if user.role == ROLE_OWNER:
+        raise ApiError(
+            403,
+            "cannot_reset_owner",
+            "An Owner's password cannot be reset from here. Use Change "
+            "password, which requires the current one.",
+        )
+
+    password = payload.new_password or secrets.token_urlsafe(12)
+    user.password_hash = hash_password(password)
+    db.flush()
+
+    # Every one of their sessions dies. A reset usually means the account is
+    # suspected compromised or the person has left the desk; leaving live
+    # tokens working would defeat it.
+    revoked = revoke_all_for_user(db, user.id)
+    db.commit()
+
+    request.state.audit.set_resource(user.id)
+    request.state.audit.add(
+        reset_by=principal.id,
+        was_generated=payload.new_password is None,
+        sessions_revoked=revoked,
+    )
+
+    return PasswordResetResponse(
+        user_id=user.id,
+        name=user.name,
+        generated_password=password if payload.new_password is None else None,
+        sessions_revoked=revoked,
+    )

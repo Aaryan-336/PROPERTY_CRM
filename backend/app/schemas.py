@@ -44,10 +44,59 @@ class LoginResponse(BaseModel):
     user: UserOut
 
 
+# Matches UserCreate's existing floor. Raising it would lock out staff whose
+# accounts were created under the old rule and who now cannot change them —
+# which is the very gap this feature exists to close.
+MIN_PASSWORD_LENGTH = 8
+
+
+class PasswordChange(BaseModel):
+    """Self-service change. The current password is required.
+
+    Without it, anyone who reaches an unlocked laptop owns the account
+    permanently rather than until it locks — a session is a temporary thing,
+    a changed password is not.
+    """
+
+    current_password: str
+    new_password: str = Field(min_length=MIN_PASSWORD_LENGTH)
+
+
+class PasswordChangeResponse(BaseModel):
+    access_token: str
+    expires_at: datetime
+    sessions_revoked: int
+
+
+class PasswordReset(BaseModel):
+    """Owner resetting someone else's password.
+
+    No current password: the whole point is that the staff member has lost it.
+    Deliberately a separate endpoint from the self-service one so the
+    capability check and the audit record are different things.
+    """
+
+    new_password: str | None = Field(
+        default=None,
+        min_length=MIN_PASSWORD_LENGTH,
+        description="Omit to have one generated and returned once.",
+    )
+
+
+class PasswordResetResponse(BaseModel):
+    user_id: int
+    name: str
+    # Present only when the server generated it. Never echoes a password the
+    # caller supplied — they already have it, and returning it puts it in one
+    # more log.
+    generated_password: str | None = None
+    sessions_revoked: int
+
+
 class UserCreate(BaseModel):
     name: str
     email: str
-    password: str = Field(min_length=8)
+    password: str = Field(min_length=MIN_PASSWORD_LENGTH)
     role: Literal["owner", "agent", "cold_caller"]
     phone: str | None = None
 

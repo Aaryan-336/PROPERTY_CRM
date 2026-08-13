@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { AgentHome } from "@/components/home/AgentHome";
 import { ColdCallerHome } from "@/components/home/ColdCallerHome";
 import { OwnerHome } from "@/components/home/OwnerHome";
-import { getCurrentUser } from "@/lib/session";
+import { SESSION_EXPIRED_ROUTE, getCurrentUser } from "@/lib/session";
 
 /**
  * Role-aware landing. Each role gets a different home screen tuned to its
@@ -12,7 +12,7 @@ import { getCurrentUser } from "@/lib/session";
  */
 export default async function Home() {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(SESSION_EXPIRED_ROUTE);
 
   if (user.role === "owner") return <OwnerHome user={user} />;
   if (user.role === "cold_caller") return <ColdCallerHome user={user} />;

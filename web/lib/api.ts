@@ -16,6 +16,14 @@ export class ApiRequestError extends Error {
 }
 
 /**
+ * Ceiling on a single backend call.
+ *
+ * Matches the sign-in route's allowance: a suspended free-plan API takes most
+ * of a minute to wake, and every page render after sign-in hits it again.
+ */
+const API_TIMEOUT_MS = 75_000;
+
+/**
  * Server-side fetch against the FastAPI backend.
  *
  * Every read in this app goes through here, which means every read carries the
@@ -30,17 +38,38 @@ export async function api<T>(
   const token = await getToken();
   if (!token) redirect("/login");
 
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      ...(init.body ? { "content-type": "application/json" } : {}),
-      ...init.headers,
-      authorization: `Bearer ${token}`,
-    },
-    cache: "no-store",
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      headers: {
+        ...(init.body ? { "content-type": "application/json" } : {}),
+        ...init.headers,
+        authorization: `Bearer ${token}`,
+      },
+      cache: "no-store",
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
+    });
+  } catch (err) {
+    // Without this the render simply never finishes and the browser shows a
+    // blank tab for as long as the user is willing to wait. An error at least
+    // reaches the error boundary and says something true.
+    const timedOut = err instanceof Error && err.name === "TimeoutError";
+    throw new ApiRequestError(
+      504,
+      timedOut ? "api_timeout" : "api_unreachable",
+      timedOut
+        ? "The server did not respond in time. On the free hosting plan it " +
+          "sleeps when idle and the first request wakes it — reload in a moment."
+        : "Could not reach the server.",
+    );
+  }
 
-  if (res.status === 401) redirect("/login?expired=1");
+  // Via the route handler rather than straight to /login: the cookie is stale
+  // and only a route handler can clear it. Redirecting to /login directly left
+  // it in place, and the proxy bounced the browser back here — a loop that
+  // locked the user out until they cleared site data.
+  if (res.status === 401) redirect("/api/auth/expired");
 
   if (!res.ok) {
     let code = "error";

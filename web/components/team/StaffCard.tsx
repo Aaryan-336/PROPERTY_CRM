@@ -31,6 +31,9 @@ export function StaffCard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [handoverTo, setHandoverTo] = useState<number | null>(null);
+  // Shown once, then gone. There is nowhere to look it up again — it is stored
+  // hashed — so the owner has to hand it over before dismissing this.
+  const [resetPassword, setResetPassword] = useState<string | null>(null);
 
   const { user } = row;
   const deactivated = Boolean(user.deleted_at);
@@ -46,6 +49,19 @@ export function StaffCard({
       throw new Error(payload?.error?.message ?? "Request failed.");
     }
     return res.status === 204 ? null : res.json();
+  }
+
+  async function resetTheirPassword() {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await call(`users/${user.id}/reset-password`, {});
+      setResetPassword(result.generated_password);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function reactivate() {
@@ -148,17 +164,32 @@ export function StaffCard({
               Restore access
             </button>
           ) : (
-            <button
-              type="button"
-              onClick={() => {
-                setError(null);
-                setHandoverTo(candidates[0]?.user.id ?? null);
-                setRemoving(true);
-              }}
-              className="text-xs font-semibold text-signal"
-            >
-              Remove
-            </button>
+            <div className="flex items-center gap-3">
+              {/* Owners are excluded server-side too: resetting one from here
+                  would bypass the current-password check that stops a borrowed
+                  session becoming a permanent takeover. */}
+              {user.role !== "owner" && (
+                <button
+                  type="button"
+                  onClick={resetTheirPassword}
+                  disabled={busy}
+                  className="text-xs font-semibold text-sandstone-deep disabled:opacity-60"
+                >
+                  {busy ? "Resetting…" : "Reset password"}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setError(null);
+                  setHandoverTo(candidates[0]?.user.id ?? null);
+                  setRemoving(true);
+                }}
+                className="text-xs font-semibold text-signal"
+              >
+                Remove
+              </button>
+            </div>
           )}
         </div>
 
@@ -168,6 +199,36 @@ export function StaffCard({
           </p>
         )}
       </div>
+
+      <Sheet
+        open={resetPassword !== null}
+        onClose={() => {
+          setResetPassword(null);
+          router.refresh();
+        }}
+        title={`New password for ${user.name}`}
+        subtitle="Shown once — it is stored hashed and cannot be looked up again."
+      >
+        <p className="tabular select-all break-all rounded-tile border border-hairline bg-parchment-deep px-4 py-3.5 text-center text-lg font-semibold text-ink">
+          {resetPassword}
+        </p>
+        <p className="mt-3 text-xs leading-relaxed text-slate">
+          Every device they were signed in on has been signed out. Give them
+          this password directly, and have them set their own from{" "}
+          <span className="font-semibold text-ink">Your account</span> once they
+          are back in.
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            setResetPassword(null);
+            router.refresh();
+          }}
+          className="tap mt-4 w-full rounded-pill bg-ink px-5 text-sm font-semibold text-white"
+        >
+          I have saved it
+        </button>
+      </Sheet>
 
       <Sheet
         open={removing}

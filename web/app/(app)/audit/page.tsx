@@ -5,7 +5,7 @@ import { Pagination } from "@/components/Pagination";
 import { ShieldIcon } from "@/components/icons";
 import { Avatar, Card, EmptyState, StatusPill, type Tone } from "@/components/ui";
 import { api, qs } from "@/lib/api";
-import { getCurrentUser } from "@/lib/session";
+import { SESSION_EXPIRED_ROUTE, getCurrentUser } from "@/lib/session";
 import { clockTime, dayStamp, relativeTime, titleCase } from "@/lib/format";
 import type { AuditEntry, Paged, User } from "@/lib/types";
 
@@ -38,7 +38,7 @@ export default async function AuditPage({
   // the read: without this the 403 surfaces as an unhandled 500, which reads
   // as a broken app rather than a closed door.
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(SESSION_EXPIRED_ROUTE);
   if (user.role !== "owner") redirect("/");
 
   const params = await searchParams;

@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { DatabaseCards } from "@/components/import/DatabaseCards";
 import { ImportLeads } from "@/components/import/ImportLeads";
 import { api } from "@/lib/api";
-import { getCurrentUser } from "@/lib/session";
+import { SESSION_EXPIRED_ROUTE, getCurrentUser } from "@/lib/session";
 import type { BatchPerformance, UserWorkload } from "@/lib/types";
 
 export const metadata = { title: "Import leads · Balaji CRM" };
@@ -22,7 +22,7 @@ export const metadata = { title: "Import leads · Balaji CRM" };
  */
 export default async function ImportPage() {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(SESSION_EXPIRED_ROUTE);
   if (user.role !== "owner") redirect("/");
 
   const [staff, batches] = await Promise.all([

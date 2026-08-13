@@ -11,6 +11,7 @@ import {
   FeedIcon,
   FlagIcon,
   HomeIcon,
+  KeyIcon,
   LogoutIcon,
   MoreIcon,
   PeopleIcon,
@@ -49,6 +50,9 @@ const NAV: NavItem[] = [
   { href: "/import", label: "Import leads", icon: UploadIcon, roles: ["owner"] },
   { href: "/team", label: "Team", icon: TeamIcon, roles: ["owner"] },
   { href: "/audit", label: "Audit", icon: ShieldIcon, roles: ["owner"] },
+  // Last, and available to everyone: it is the only screen a cold caller has
+  // beyond their queue, and the only way anyone changes their own password.
+  { href: "/account", label: "Your account", icon: KeyIcon, roles: ["owner", "agent", "cold_caller"] },
 ];
 
 /* Which items earn a slot on the small screen, per role.

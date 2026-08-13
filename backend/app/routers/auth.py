@@ -7,8 +7,21 @@ from app.db import system_scope
 from app.deps import PrincipalDep, SessionDep
 from app.errors import ApiError
 from app.models import User
-from app.schemas import LoginRequest, LoginResponse, UserOut
-from app.security import decode_token, issue_token, revoke_jti, verify_password
+from app.schemas import (
+    LoginRequest,
+    LoginResponse,
+    PasswordChange,
+    PasswordChangeResponse,
+    UserOut,
+)
+from app.security import (
+    decode_token,
+    hash_password,
+    issue_token,
+    revoke_all_for_user,
+    revoke_jti,
+    verify_password,
+)
 
 router = APIRouter(tags=["auth"])
 
@@ -63,3 +76,62 @@ def me(principal: PrincipalDep, db: SessionDep) -> UserOut:
             select(User).where(User.id == principal.id)
         ).scalar_one()
     return UserOut.model_validate(user)
+
+
+@router.post("/auth/change-password", response_model=PasswordChangeResponse)
+def change_password(
+    payload: PasswordChange,
+    principal: PrincipalDep,
+    db: SessionDep,
+    request: Request,
+) -> PasswordChangeResponse:
+    """Change your own password.
+
+    Every live session is revoked and a fresh one issued for the caller. That
+    is the point of changing a password rather than merely knowing a new one:
+    if it is being changed *because* someone else has it, leaving their session
+    running would make the change cosmetic. The caller keeps working because
+    they get a new token back; everyone else is signed out.
+
+    The current password is required even though the caller is authenticated —
+    a borrowed unlocked laptop should not be able to take an account
+    permanently.
+    """
+    with system_scope():
+        user = db.get(User, principal.id)
+    if user is None or user.deleted_at is not None:
+        raise ApiError(401, "invalid_credentials", "Account is not active.")
+
+    if not verify_password(payload.current_password, user.password_hash):
+        raise ApiError(
+            400, "wrong_password", "Your current password is not correct."
+        )
+
+    if verify_password(payload.new_password, user.password_hash):
+        raise ApiError(
+            400,
+            "password_unchanged",
+            "That is already your password. Choose a different one.",
+        )
+
+    user.password_hash = hash_password(payload.new_password)
+    db.flush()
+
+    revoked = revoke_all_for_user(db, user.id)
+    token, expires_at = issue_token(
+        db, user.id, user.role, request.headers.get("user-agent")
+    )
+    db.commit()
+
+    # Never the password, obviously, and not the new jti either — the audit log
+    # is readable by the owner, and a session id there would be a live
+    # credential sitting in a table designed to be browsed.
+    request.state.audit.set_resource(user.id)
+    request.state.audit.add(self_service=True, sessions_revoked=revoked)
+
+    return PasswordChangeResponse(
+        access_token=token,
+        expires_at=expires_at,
+        # The one just issued does not count against the caller.
+        sessions_revoked=max(revoked - 1, 0),
+    )

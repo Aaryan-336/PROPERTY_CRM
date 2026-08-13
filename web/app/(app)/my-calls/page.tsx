@@ -13,7 +13,7 @@ import {
 } from "@/components/ui";
 import { api } from "@/lib/api";
 import { clockTime, dayStamp, outcomeLabel, relativeTime } from "@/lib/format";
-import { getCurrentUser } from "@/lib/session";
+import { SESSION_EXPIRED_ROUTE, getCurrentUser } from "@/lib/session";
 import type { CallLog, Paged, Task } from "@/lib/types";
 
 export const metadata = { title: "My calls · Balaji CRM" };
@@ -29,7 +29,7 @@ export const metadata = { title: "My calls · Balaji CRM" };
  */
 export default async function MyCallsPage() {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(SESSION_EXPIRED_ROUTE);
 
   const [calls, tasks] = await Promise.all([
     api<Paged<CallLog>>("/calls?limit=50"),

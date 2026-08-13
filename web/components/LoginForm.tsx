@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export function LoginForm() {
   const router = useRouter();
@@ -9,20 +9,42 @@ export function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // A sign-in that is merely slow looks identical to one that has hung. On the
+  // free hosting plan the API sleeps after ~15 minutes idle and the request
+  // that wakes it can take most of a minute, so after a few seconds of silence
+  // say what is happening rather than leaving a spinner to be interpreted.
+  const [waking, setWaking] = useState(false);
+  const wakeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (wakeTimer.current) clearTimeout(wakeTimer.current);
+  }, []);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError(null);
+    setWaking(false);
+    wakeTimer.current = setTimeout(() => setWaking(true), 4000);
 
     const res = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ email, password }),
+      // The route it calls waits up to 75s for a sleeping API; this is the
+      // client's own ceiling, a little longer, so the server's specific
+      // message wins rather than being pre-empted by a generic abort.
+      signal: AbortSignal.timeout(80_000),
     }).catch(() => null);
 
+    if (wakeTimer.current) clearTimeout(wakeTimer.current);
+    setWaking(false);
+
     if (!res) {
-      setError("Could not reach the server. Check your connection.");
+      setError(
+        "Could not reach the server. If it has been idle it may still be " +
+          "starting — wait a moment and try again.",
+      );
       setBusy(false);
       return;
     }
@@ -34,6 +56,9 @@ export function LoginForm() {
       return;
     }
 
+    // Deliberately no setBusy(false) on success: the button stays disabled
+    // through the navigation that follows, which is itself slow on a cold
+    // server. Re-enabling it here invites a second sign-in mid-redirect.
     router.replace("/");
     router.refresh();
   }
@@ -79,12 +104,22 @@ export function LoginForm() {
         </p>
       )}
 
+      {waking && !error && (
+        <p
+          role="status"
+          className="rounded-tile bg-sandstone-soft px-4 py-2.5 text-sm text-sandstone-deep"
+        >
+          Waking the server — the first sign-in after a quiet spell can take up
+          to a minute. Leave this open.
+        </p>
+      )}
+
       <button
         type="submit"
         disabled={busy}
         className="tap w-full rounded-pill bg-ink px-5 text-sm font-semibold text-white transition-opacity disabled:opacity-60"
       >
-        {busy ? "Signing in…" : "Sign in"}
+        {busy ? (waking ? "Still working…" : "Signing in…") : "Sign in"}
       </button>
     </form>
   );

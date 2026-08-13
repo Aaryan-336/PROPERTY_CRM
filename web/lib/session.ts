@@ -29,6 +29,19 @@ export function sessionCookieOptions(maxAgeSeconds: number) {
   };
 }
 
+/**
+ * Where to send a request whose session did not check out.
+ *
+ * Not "/login". Everything under (app) only renders when a cookie is present —
+ * the proxy redirects when it is missing — so a null user here means the
+ * cookie is stale, and sending the browser to /login leaves it in place for
+ * the proxy to bounce straight back. That was an inescapable redirect loop:
+ * signing in again was impossible without clearing site data by hand.
+ *
+ * This route clears the cookie first, which a Server Component cannot do.
+ */
+export const SESSION_EXPIRED_ROUTE = "/api/auth/expired";
+
 export async function getCurrentUser(): Promise<User | null> {
   const token = await getToken();
   if (!token) return null;
