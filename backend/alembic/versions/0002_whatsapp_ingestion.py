@@ -23,6 +23,21 @@ depends_on = None
 
 APP_ROLE = "balaji_app"
 
+
+def _role_exists(role: str) -> bool:
+    """True when `role` is a real Postgres role on this cluster.
+
+    0001 checks this before granting; this migration did not, and on managed
+    Postgres — which hands you a single owner role and no balaji_app — the
+    GRANT below aborted the deploy with `role "balaji_app" does not exist`.
+    """
+    return bool(
+        op.get_bind()
+        .execute(sa.text("SELECT 1 FROM pg_roles WHERE rolname = :r"), {"r": role})
+        .scalar()
+    )
+
+
 NEW_TABLES = ("whatsapp_groups", "whatsapp_messages", "property_sources")
 
 PROPERTY_COLUMNS = (
@@ -183,6 +198,14 @@ def upgrade() -> None:
     # ---- grants ----------------------------------------------------------
     # Same posture as 0001: the app role gets DML on operational tables. It
     # still holds no UPDATE/DELETE on audit_log, and nothing here changes that.
+    #
+    # Guarded like 0001. Managed Postgres (Render, Supabase, RDS) gives a single
+    # owner role, so balaji_app does not exist there and an unguarded GRANT
+    # fails the whole migration — which is exactly what it did.
+    if not _role_exists(APP_ROLE):
+        print(f"[0002] role {APP_ROLE!r} not present - skipping GRANT.")
+        return
+
     for table in NEW_TABLES:
         op.execute(
             f"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE {table} TO {APP_ROLE}"
