@@ -64,6 +64,15 @@ const log = pino({
 const args = new Set(process.argv.slice(2));
 const LIST_GROUPS = args.has("--list-groups");
 const PAIR_ONLY = args.has("--pair");
+// Optional name filter for --list-groups. A working account is in hundreds of
+// groups and only a handful carry inventory; without this the owner is asked
+// to eye-scan the lot to find them.
+const GROUP_FILTER = process.argv
+  .slice(2)
+  .filter((a) => !a.startsWith("--"))
+  .join(" ")
+  .trim()
+  .toLowerCase();
 
 /** group_jid -> name, refreshed from the API so the CRM stays authoritative. */
 let watched = new Map();
@@ -265,19 +274,44 @@ async function connect() {
 
 async function printGroups(socket) {
   const groups = await socket.groupFetchAllParticipating();
-  const rows = Object.values(groups).map((g) => ({
-    id: g.id,
-    name: g.subject,
-    participants: g.participants?.length ?? 0,
+  // Keyed by id rather than read off the value: a group's metadata can arrive
+  // before its subject has synced, and one nameless group used to take the
+  // whole listing down on sort — hiding every other id the owner came for.
+  const rows = Object.entries(groups).map(([id, g]) => ({
+    id: g?.id || id,
+    name: g?.subject?.trim() || "(name not synced yet)",
+    synced: Boolean(g?.subject?.trim()),
+    participants: g?.participants?.length ?? 0,
   }));
-  rows.sort((a, b) => a.name.localeCompare(b.name));
+  // Unnamed groups last: they are metadata that has not synced yet, and
+  // burying them keeps the part the owner can actually recognise at the top.
+  rows.sort((a, b) => {
+    if (a.synced !== b.synced) return a.synced ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
 
-  console.log(
-    `\nThis account is in ${rows.length} group(s). ` +
-      "Add the ones carrying inventory in the CRM (Owner -> Inventory feed):\n",
-  );
-  for (const row of rows) {
+  const shown = GROUP_FILTER
+    ? rows.filter((r) => r.name.toLowerCase().includes(GROUP_FILTER))
+    : rows;
+
+  if (GROUP_FILTER) {
+    console.log(
+      `\n${shown.length} of ${rows.length} group(s) match "${GROUP_FILTER}":\n`,
+    );
+  } else {
+    console.log(
+      `\nThis account is in ${rows.length} group(s). ` +
+        "Add the ones carrying inventory in the CRM (Owner -> Inventory feed).\n" +
+        "Narrow the list with a search word, e.g. `npm run groups -- property`:\n",
+    );
+  }
+
+  for (const row of shown) {
     console.log(`  ${row.id}\n      ${row.name}  (${row.participants} members)\n`);
+  }
+
+  if (GROUP_FILTER && shown.length === 0) {
+    console.log("  Nothing matched. Run without a search word to see them all.\n");
   }
 }
 

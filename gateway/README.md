@@ -54,10 +54,17 @@ Link a device**. The session is saved to `.wa-session/` and survives restarts.
 ### 2. Find the group ids
 
 ```bash
-npm run groups
+npm run groups              # all of them
+npm run groups -- property  # only those whose name matches
 ```
 
-Prints every group the account is in, with its id (`…@g.us`) and name.
+Prints every group the account is in, with its id (`…@g.us`) and name. A working
+account is easily in several hundred groups and only a handful carry inventory,
+so pass a search word to narrow it.
+
+Groups whose metadata has not synced yet show as *(name not synced yet)* and
+sort to the bottom. Their ids still work; re-run once the session has been
+connected for a while and most will have filled in.
 
 ### 3. Add the groups in the CRM
 
