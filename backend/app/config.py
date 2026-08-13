@@ -60,9 +60,13 @@ class Settings(BaseSettings):
     # Model credentials for the extraction worker. Read by the SDK from the
     # environment; named here so `.env` is the single place to configure the
     # backend, and so ingestion-status can report whether it is set.
-    anthropic_api_key: str = ""
-    extraction_model: str = "claude-opus-5"
-    extraction_effort: str = "low"
+    groq_api_key: str = ""
+    # Groq retires model names on a fairly short cycle, so treat this as a
+    # setting to check when extraction starts 404ing, not a constant.
+    extraction_model: str = "llama-3.3-70b-versatile"
+    # auto | json_schema | json_object. "auto" asks for a strict schema and
+    # downgrades itself if the model will not honour one.
+    extraction_schema_mode: str = "auto"
 
     @property
     def sqlalchemy_url(self) -> str:

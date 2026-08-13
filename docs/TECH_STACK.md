@@ -22,7 +22,7 @@
 
 ## Key libraries/services to plan for
 
-- LLM API (e.g. Claude via the Anthropic API) for parsing unstructured WhatsApp property messages into structured fields — this is a genuine LLM extraction task, not a regex job, given how inconsistent listing formats are.
+- LLM API (Groq — `llama-3.3-70b-versatile` by default) for parsing unstructured WhatsApp property messages into structured fields — this is a genuine LLM extraction task, not a regex job, given how inconsistent listing formats are. Groq is chosen for throughput and price: a busy brokerage generates thousands of messages a day, and the task is structured copying out of messy text rather than reasoning, which does not need a frontier model. The trade is that Groq has no prompt caching, so the large system prompt is re-paid on every request and batching is what amortises it.
 - A string-similarity library (e.g. `rapidfuzz`) for dedup logic (contacts and property listings).
 - `python-jose` or similar for JWT handling in FastAPI.
 - A Postgres migration tool (e.g. Alembic) from day one, since the schema will evolve across phases.

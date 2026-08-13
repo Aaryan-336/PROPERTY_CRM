@@ -124,4 +124,4 @@ anything else in the CRM, which is the point of it living on its own box.
 | `logged out — the linked device was removed` | Someone unlinked the device from the phone. Delete `.wa-session/` and re-pair. |
 | `API ignored N unwatched group(s)` | Normal right after removing a group; already-journalled messages are discarded by the API. |
 | `delivery failed … retrying` | API down or the secret does not match `backend/.env`. Messages stay on disk. |
-| Messages arrive but no inventory appears | The extraction worker is not running, or `ANTHROPIC_API_KEY` is unset. Check **Inventory feed** in the CRM — it reports both. |
+| Messages arrive but no inventory appears | The extraction worker is not running, or `GROQ_API_KEY` is unset. Check **Inventory feed** in the CRM — it reports both. |

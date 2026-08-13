@@ -18,7 +18,7 @@ neither can be forgotten by a future endpoint.
 | Backend | FastAPI + SQLAlchemy + Alembic |
 | Database | PostgreSQL |
 | Ingestion gateway | Node + Baileys (WhatsApp Web multi-device) |
-| Extraction | Claude Opus 5, structured outputs |
+| Extraction | Groq (`llama-3.3-70b-versatile`), JSON-schema structured outputs |
 
 ## Layout
 

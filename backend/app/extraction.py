@@ -26,10 +26,11 @@ So the model does the reading, and this module does everything that has to be
 * it asks for values verbatim -- "1.2 Cr", not a number -- because the model is
   reliable at copying what it read and unreliable at arithmetic, and
   ``app/listing_normalize.py`` converts deterministically and testably;
-* it batches messages per request and caches the (large, stable) system prompt,
-  because a busy brokerage generates thousands of messages a day and a
-  per-message uncached call is the difference between a rounding error and a
-  real bill.
+* it batches messages per request, because a busy brokerage generates thousands
+  of messages a day and the system prompt below is large. Groq has no prompt
+  caching, so that prompt is paid for on every request -- batching is the only
+  thing amortising it, which makes the batch size a cost decision rather than a
+  throughput one.
 
 One message can carry several listings -- brokers routinely post a numbered
 list of six flats -- so the unit of extraction is the message and the output is
@@ -38,6 +39,7 @@ a list.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from dataclasses import dataclass
@@ -260,27 +262,60 @@ class ExtractionUnavailable(RuntimeError):
     """No API key configured, or the SDK is not installed."""
 
 
+# Groq deprecates and renames models fairly often, so this is a starting point
+# rather than a commitment -- override with EXTRACTION_MODEL when it retires.
+# A 70B-class instruction-following model is the right size here: the task is
+# structured copying out of messy text, which does not need a frontier model,
+# and Groq's speed is what makes a per-message batch cheap enough to run
+# continuously.
+DEFAULT_MODEL = "llama-3.3-70b-versatile"
+
+
+def _strict_schema(schema: dict) -> dict:
+    """Tighten a pydantic JSON schema until a structured-output API will take it.
+
+    Providers that guarantee schema conformance (Groq included, following
+    OpenAI's shape) refuse anything permissive: every object must forbid extra
+    properties and must list all of its properties as required. Pydantic emits
+    neither, because for validation purposes it does not need to.
+    """
+    if isinstance(schema, dict):
+        if schema.get("type") == "object":
+            schema["additionalProperties"] = False
+            props = schema.get("properties")
+            if props:
+                schema["required"] = list(props)
+        for value in schema.values():
+            _strict_schema(value)
+    elif isinstance(schema, list):
+        for value in schema:
+            _strict_schema(value)
+    return schema
+
+
 class Extractor:
-    """Thin wrapper over the Messages API.
+    """Thin wrapper over Groq's chat completions API.
 
     Constructed once per worker process so the SDK client (and its connection
     pool) is reused across batches.
+
+    Groq has no prompt caching, so unlike the previous Anthropic implementation
+    the large system prompt is paid for on every batch. Batching therefore
+    matters more, not less: it is what amortises that prompt across messages.
     """
 
     def __init__(
         self,
         *,
         model: str | None = None,
-        effort: str | None = None,
         api_key: str | None = None,
     ) -> None:
-        self.model = model or os.getenv("EXTRACTION_MODEL", "claude-opus-5")
-        # Extraction is a scoped, well-specified task -- the kind where low
-        # effort performs as well as high at a fraction of the token spend.
-        # Raise it via env if a market's messages prove harder than expected.
-        self.effort = effort or os.getenv("EXTRACTION_EFFORT", "low")
-        self._api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
+        self.model = model or os.getenv("EXTRACTION_MODEL", DEFAULT_MODEL)
+        self._api_key = api_key or os.getenv("GROQ_API_KEY")
         self._client = None
+        # Whether this model accepts a strict json_schema. Assumed yes and
+        # downgraded permanently on the first rejection -- see extract().
+        self._schema_mode = os.getenv("EXTRACTION_SCHEMA_MODE", "auto")
 
     @property
     def available(self) -> bool:
@@ -294,40 +329,36 @@ class Extractor:
         if self._client is not None:
             return self._client
         try:
-            import anthropic
+            from groq import Groq
         except ImportError as exc:  # pragma: no cover - depends on install
             raise ExtractionUnavailable(
-                "The `anthropic` package is not installed. "
+                "The `groq` package is not installed. "
                 "Run: pip install -r requirements.txt"
             ) from exc
 
-        # A bare client also resolves ANTHROPIC_AUTH_TOKEN or an `ant auth
-        # login` profile, so an unset ANTHROPIC_API_KEY does not by itself mean
-        # there are no credentials -- let the SDK do the resolving.
-        try:
-            client = (
-                anthropic.Anthropic(api_key=self._api_key)
-                if self._api_key
-                else anthropic.Anthropic()
-            )
-        except Exception as exc:
-            raise ExtractionUnavailable(f"Could not build Anthropic client: {exc}") from exc
-
-        # Construction is lazy: with no credentials at all it succeeds here and
-        # fails at request time instead. Check now, so the worker reports
-        # "not configured" on startup rather than burning through the backlog
-        # marking every message failed.
-        if not any(
-            getattr(client, attr, None)
-            for attr in ("api_key", "auth_token", "credentials")
-        ):
+        if not self._api_key:
             raise ExtractionUnavailable(
-                "No Anthropic credentials found. Set ANTHROPIC_API_KEY in "
-                "backend/.env (or run `ant auth login`) to enable extraction."
+                "No Groq credentials found. Set GROQ_API_KEY in backend/.env "
+                "to enable extraction. Get one at https://console.groq.com/keys"
             )
 
-        self._client = client
+        try:
+            self._client = Groq(api_key=self._api_key)
+        except Exception as exc:
+            raise ExtractionUnavailable(f"Could not build Groq client: {exc}") from exc
         return self._client
+
+    def _response_format(self) -> dict:
+        if self._schema_mode == "json_object":
+            return {"type": "json_object"}
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "extraction_batch",
+                "strict": True,
+                "schema": _strict_schema(ExtractionBatch.model_json_schema()),
+            },
+        }
 
     def extract(self, items: list[ExtractionInput]) -> list[MessageExtraction]:
         """Extract one batch. Raises on transport/API failure so the worker can
@@ -336,45 +367,94 @@ class Extractor:
             return []
         client = self._ensure_client()
 
-        response = client.messages.parse(
-            model=self.model,
-            max_tokens=16000,
-            system=[
-                {
-                    "type": "text",
-                    "text": SYSTEM_PROMPT,
-                    # The system prompt is large, byte-stable and re-sent on
-                    # every batch -- the textbook case for caching. Only the
-                    # message block after it varies.
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ],
-            messages=[{"role": "user", "content": render_batch(items)}],
-            output_format=ExtractionBatch,
-            output_config={"effort": self.effort},
-        )
+        try:
+            response = self._call(client, items)
+        except Exception as exc:
+            # Model does not do strict schemas. Groq reports this as a 400
+            # rather than by advertising capability, so the only way to know is
+            # to be told. Downgrade once, for the life of the process, instead
+            # of paying a failed request per batch forever.
+            if self._schema_mode == "auto" and _is_schema_rejection(exc):
+                log.warning(
+                    "model %s rejected json_schema (%s); falling back to JSON mode",
+                    self.model,
+                    exc,
+                )
+                self._schema_mode = "json_object"
+                response = self._call(client, items)
+            else:
+                raise
 
-        if response.stop_reason == "refusal":
+        choice = response.choices[0]
+        if choice.finish_reason == "length":
+            # Silently truncated JSON parses as garbage or not at all. Say so,
+            # so the worker retries rather than marking the batch processed.
             raise RuntimeError(
-                "Extraction refused by safety classifier: "
-                f"{getattr(response.stop_details, 'category', None)}"
+                f"Extraction hit the output limit on a batch of {len(items)}. "
+                "Lower WHATSAPP_EXTRACT_BATCH_SIZE."
             )
 
-        parsed = response.parsed_output
-        if parsed is None:
-            raise RuntimeError("Extraction returned no parseable output")
+        content = choice.message.content
+        if not content:
+            raise RuntimeError("Extraction returned an empty response")
+
+        try:
+            parsed = ExtractionBatch.model_validate_json(content)
+        except Exception as exc:
+            raise RuntimeError(f"Extraction returned unparseable output: {exc}") from exc
 
         usage = getattr(response, "usage", None)
         if usage is not None:
             log.info(
-                "extracted batch of %d: in=%s out=%s cache_read=%s",
+                "extracted batch of %d: in=%s out=%s",
                 len(items),
-                getattr(usage, "input_tokens", "?"),
-                getattr(usage, "output_tokens", "?"),
-                getattr(usage, "cache_read_input_tokens", "?"),
+                getattr(usage, "prompt_tokens", "?"),
+                getattr(usage, "completion_tokens", "?"),
             )
 
         return _align(items, parsed.results)
+
+    def _call(self, client, items: list[ExtractionInput]):
+        system = SYSTEM_PROMPT
+        if self._schema_mode == "json_object":
+            # JSON mode constrains the response to *valid JSON*, not to our
+            # shape, so in this path the schema has to be carried in the prompt.
+            # (Groq also requires the word JSON to appear in it.)
+            system += (
+                "\n\n## Output\n\nRespond with JSON matching this schema "
+                "exactly, and nothing else:\n\n"
+                + json.dumps(_strict_schema(ExtractionBatch.model_json_schema()))
+            )
+
+        return client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": render_batch(items)},
+            ],
+            response_format=self._response_format(),
+            # Extraction is copying, not composition. Nothing here benefits
+            # from sampling variety, and reruns of the same backlog should
+            # agree with each other.
+            temperature=0,
+            max_tokens=16000,
+        )
+
+
+def _is_schema_rejection(exc: Exception) -> bool:
+    """True when the API refused the request because of json_schema itself.
+
+    Deliberately narrow: a rejection of the *schema* is worth retrying in the
+    weaker mode, but an auth failure, a rate limit or a dead model is not, and
+    retrying those would double the load and bury the real error.
+    """
+    if getattr(exc, "status_code", None) not in (400, 422):
+        return False
+    text = str(exc).lower()
+    return any(
+        term in text
+        for term in ("json_schema", "response_format", "schema", "structured output")
+    )
 
 
 def _align(

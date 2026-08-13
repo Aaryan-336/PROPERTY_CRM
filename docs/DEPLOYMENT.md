@@ -80,14 +80,14 @@ Environment variables:
 | `JWT_SECRET` | Generate a long random value |
 | `CORS_ORIGINS` | Your Vercel URL (after step 5) |
 | `WHATSAPP_INGEST_SECRET` | Only if running the gateway |
-| `ANTHROPIC_API_KEY` | Only if running the WhatsApp feed |
+| `GROQ_API_KEY` | Only if running the WhatsApp feed |
 
 Use the **Internal** connection string — it stays on Render's private network
 and does not count against the database's external connection limit.
 
 **The extraction worker** is *New → Background Worker*, same repo, same root
 directory and build command, with `python -m app.workers.whatsapp` as the start
-command and the same `DATABASE_URL` / `ANTHROPIC_API_KEY`. Background Workers
+command and the same `DATABASE_URL` / `GROQ_API_KEY`. Background Workers
 are not offered on the free plan.
 
 ### 2. Fill in the secrets Render can't generate
@@ -97,7 +97,7 @@ On **balaji-api** → *Environment*, the three marked `sync: false` are blank:
 | Variable | Value |
 |---|---|
 | `CORS_ORIGINS` | Leave blank for now — you need the Vercel URL first (step 5) |
-| `ANTHROPIC_API_KEY` | Only if using the WhatsApp feed |
+| `GROQ_API_KEY` | Only if using the WhatsApp feed |
 
 `JWT_SECRET` and `WHATSAPP_INGEST_SECRET` are generated for you. Copy
 `WHATSAPP_INGEST_SECRET` if you plan to run the gateway.
@@ -291,7 +291,8 @@ the anti-leakage control the product exists for.
 | `preDeployCommand` ignored / no Shell tab | Both are paid-tier features. The blueprint already migrates in the start command; create the owner from your laptop (step 4) |
 | First request after idle takes ~50s | Render free tier spins down. Upgrade to `starter`, or accept it |
 | Login works, then 401s everywhere | `JWT_SECRET` changed between deploys — it invalidates live sessions |
-| Inventory feed shows "Extraction is not configured" | `ANTHROPIC_API_KEY` not set on **both** the API and the worker |
+| Inventory feed shows "Extraction is not configured" | `GROQ_API_KEY` not set on **both** the API and the worker |
+| Extraction fails with a 404 on the model | Groq retired that model name. Check https://console.groq.com/docs/models and update `EXTRACTION_MODEL` |
 | Messages queue but never become listings | Extraction worker not running (free plan has no workers) |
 
 ## Costs

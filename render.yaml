@@ -52,7 +52,7 @@ services:
       # Without it the browser blocks every API call as a CORS failure.
       - key: CORS_ORIGINS
         sync: false
-      - key: ANTHROPIC_API_KEY
+      - key: GROQ_API_KEY
         sync: false
       - key: JWT_EXPIRY_HOURS
         value: "12"
@@ -78,9 +78,9 @@ services:
           property: connectionString
       # Must match the API's key. Without it the worker exits on startup with
       # an actionable message rather than silently failing every message.
-      - key: ANTHROPIC_API_KEY
+      - key: GROQ_API_KEY
         sync: false
       - key: EXTRACTION_MODEL
-        value: claude-opus-5
-      - key: EXTRACTION_EFFORT
-        value: low
+        value: llama-3.3-70b-versatile
+      - key: EXTRACTION_SCHEMA_MODE
+        value: auto

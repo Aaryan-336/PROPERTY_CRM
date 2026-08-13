@@ -42,7 +42,7 @@ whatsapp_messages (status=pending)
      ▼
 app/workers/whatsapp.py       ← claims a batch with SKIP LOCKED
      │
-     ├─► app/extraction.py        Claude Opus 5, structured outputs.
+     ├─► app/extraction.py        Groq chat completions, JSON-schema output.
      │                            "Is this inventory?" + fields, verbatim.
      ├─► app/listing_normalize.py "1.2 Cr" → 12000000. Deterministic, tested.
      └─► app/property_dedup.py    Blocking key → weighted fuzzy score.
@@ -121,7 +121,7 @@ the listing *type* is never rewritten.
 
 ```bash
 # 1. Backend: secret + model credentials
-#    backend/.env → WHATSAPP_INGEST_SECRET, ANTHROPIC_API_KEY
+#    backend/.env → WHATSAPP_INGEST_SECRET, GROQ_API_KEY
 cd backend && ./.venv/bin/alembic upgrade head
 
 # 2. Gateway (separate box in production)
@@ -143,7 +143,7 @@ cd backend && ./.venv/bin/python -m app.workers.whatsapp
 screen rather than left to be inferred from an inventory list that stopped
 growing:
 
-- *Extraction not configured* — no `ANTHROPIC_API_KEY`. Messages accumulate as
+- *Extraction not configured* — no `GROQ_API_KEY`. Messages accumulate as
   `pending`; nothing becomes inventory.
 - *No messages in 24h* — groups are quiet, or the gateway lost its session.
 

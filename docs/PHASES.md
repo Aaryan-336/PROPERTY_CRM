@@ -33,7 +33,7 @@ Ship a usable, secure daily-driver first.
 
 ## Phase 3 — Automation & Advanced Inventory
 
-- ✅ **WhatsApp Property Feed Aggregator — built.** Ingestion gateway (`gateway/`, Baileys) → HMAC-signed webhook → raw message store → LLM extraction (Claude Opus 5, structured outputs) → deterministic normalization → two-stage dedup → unified inventory, with an owner-facing monitoring and review console. See `ARCHITECTURE.md` for the data flow and `gateway/README.md` for the unofficial-integration caveats.
+- ✅ **WhatsApp Property Feed Aggregator — built.** Ingestion gateway (`gateway/`, Baileys) → HMAC-signed webhook → raw message store → LLM extraction (Groq, JSON-schema structured outputs) → deterministic normalization → two-stage dedup → unified inventory, with an owner-facing monitoring and review console. See `ARCHITECTURE.md` for the data flow and `gateway/README.md` for the unofficial-integration caveats.
   - Note on "the WhatsApp API": there is no official API — paid or otherwise — that can read *group* messages. The Cloud API only delivers messages sent to a registered business number. Group ingestion necessarily means driving a real account over WhatsApp Web multi-device, which is what `TECH_STACK.md` already specified and what the gateway implements.
 - Automated lead scoring (budget fit, site-visit signal, recency)
 - Automated lead routing (territory/project match, workload balancing, hot-lead bypass)
