@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { AssignLead } from "@/components/AssignLead";
+import { EditLead } from "@/components/EditLead";
 import { ContactActions } from "@/components/ContactActions";
 import { LeadJourney } from "@/components/LeadJourney";
 import { MatchedInventory } from "@/components/MatchedInventory";
@@ -73,6 +74,9 @@ export default async function ContactDetail({
   const assignees = contact.assignees ?? [];
   const name = fullName(contact);
   const canShowProperty = user?.role === "owner" || user?.role === "agent";
+  // Same roles the API lets write contacts. A cold caller never reaches this
+  // page at all, and the endpoint refuses them regardless.
+  const canEdit = canShowProperty;
 
   return (
     <div className="space-y-5 pb-4">
@@ -109,6 +113,7 @@ export default async function ContactDetail({
             )}
           </div>
           <div className="flex flex-col items-end gap-2">
+            {canEdit && <EditLead contact={contact} />}
             <StatusPill
               label={stageLabel(contact.stage)}
               tone={STAGE_TONE[contact.stage ?? "new"] ?? "neutral"}

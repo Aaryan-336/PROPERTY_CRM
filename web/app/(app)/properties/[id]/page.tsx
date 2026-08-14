@@ -12,6 +12,7 @@ import {
 } from "@/components/ui";
 import { ApiRequestError, api, apiOptional, qs } from "@/lib/api";
 import { money, relativeTime, titleCase } from "@/lib/format";
+import { EditProperty } from "@/components/EditProperty";
 import { getCurrentUser } from "@/lib/session";
 import type { Paged, Property, PropertySource, Showing } from "@/lib/types";
 
@@ -44,6 +45,9 @@ export default async function PropertyDetail({
   // Cold callers have no access to showing history at all, so the panel is
   // skipped rather than rendered empty.
   const canSeeShowings = user?.role === "owner" || user?.role === "agent";
+  // properties.write is Owner and Agent; a cold caller may read inventory but
+  // never change it, and the API enforces that regardless of this flag.
+  const canEdit = canSeeShowings;
   const [showings, sources] = await Promise.all([
     canSeeShowings
       ? api<Paged<Showing>>(
@@ -78,6 +82,7 @@ export default async function PropertyDetail({
             </p>
           </div>
           <div className="flex flex-col items-end gap-2">
+            {canEdit && <EditProperty property={property} />}
             <StatusPill
               label={titleCase(property.status ?? "available")}
               tone={STATUS_TONE[property.status ?? "available"] ?? "neutral"}

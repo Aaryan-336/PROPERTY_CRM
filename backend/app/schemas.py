@@ -476,6 +476,19 @@ class PropertyUpdate(BaseModel):
     listing_type: str | None = None
     price: Decimal | None = None
     status: str | None = None
+    # The fields the WhatsApp extractor fills in. Editable because extraction
+    # is probabilistic: a listing flagged for review is flagged precisely
+    # because a human needs to correct it, and being unable to correct the
+    # numbers made the review queue a place to accept or delete, nothing else.
+    bhk: int | None = Field(default=None, ge=0, le=20)
+    area_sqft: int | None = Field(default=None, ge=0, le=1_000_000)
+    furnishing: str | None = None
+    contact_name: str | None = None
+    contact_phone: str | None = None
+    # Confirming a reviewed listing is the main reason to open this form.
+    review_state: Literal["auto_accepted", "needs_review", "confirmed", "rejected"] | None = (
+        None
+    )
 
 
 class PropertyOut(BaseModel):

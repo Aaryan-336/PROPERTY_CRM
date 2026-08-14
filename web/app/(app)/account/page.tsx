@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { InstallApp } from "@/components/InstallApp";
 import { ChangePassword } from "@/components/account/ChangePassword";
 import { InkCard } from "@/components/ui";
 import { roleLabel } from "@/lib/format";
@@ -30,6 +31,8 @@ export default async function AccountPage() {
           {user.email ? ` · ${user.email}` : ""}
         </p>
       </InkCard>
+
+      <InstallApp />
 
       <ChangePassword />
     </div>
