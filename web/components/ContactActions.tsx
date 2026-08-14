@@ -33,7 +33,7 @@ export function ContactActions({
 
   return (
     <>
-      <div className="safe-bottom pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center px-4 pb-[76px] lg:static lg:justify-start lg:px-0 lg:pb-0">
+      <div className="above-dock pointer-events-none fixed inset-x-0 z-30 flex justify-center px-4 lg:static lg:bottom-auto lg:justify-start lg:px-0">
         <div className="pointer-events-auto flex w-full max-w-md gap-2 lg:max-w-none">
           <button
             onClick={() => setCalling(true)}

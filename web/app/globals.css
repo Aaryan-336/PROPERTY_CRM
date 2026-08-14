@@ -94,6 +94,23 @@
     padding-bottom: max(1rem, env(safe-area-inset-bottom));
   }
 
+  /* Clears the floating mobile dock.
+   *
+   * The dock is a 44px tap target in a pill with 0.5rem of vertical padding,
+   * sitting on top of the safe-area inset — so its height is not a constant and
+   * cannot be written as one. On an iPhone with a home indicator the inset is
+   * ~34px and a hardcoded offset overlaps by exactly that much.
+   *
+   * A fixed bar must not try to solve this with padding-bottom: `safe-bottom`
+   * already sets that, and the two declarations fight. This moves the element
+   * instead, which nothing else is touching.
+   */
+  .above-dock {
+    bottom: calc(
+      44px + 1rem + max(1rem, env(safe-area-inset-bottom)) + 0.625rem
+    );
+  }
+
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
