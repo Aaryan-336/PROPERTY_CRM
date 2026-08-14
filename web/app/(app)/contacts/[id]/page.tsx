@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
+import { AssignLead } from "@/components/AssignLead";
 import { ContactActions } from "@/components/ContactActions";
 import { LeadJourney } from "@/components/LeadJourney";
 import { MatchedInventory } from "@/components/MatchedInventory";
@@ -24,6 +25,7 @@ import type {
   PropertyMatch,
   Showing,
   Task,
+  UserWorkload,
 } from "@/lib/types";
 
 export default async function ContactDetail({
@@ -48,6 +50,11 @@ export default async function ContactDetail({
     throw error;
   }
 
+  const staff =
+    user?.role === "owner"
+      ? await apiOptional<UserWorkload[]>("/users/workload")
+      : null;
+
   const [calls, activities, showings, tasks, matches] = await Promise.all([
     api<Paged<CallLog>>(`/calls${qs({ contact_id: id, limit: 50 })}`),
     api<Paged<Activity>>(`/activities${qs({ contact_id: id, limit: 50 })}`),
@@ -59,6 +66,11 @@ export default async function ContactDetail({
     apiOptional<PropertyMatch[]>(`/contacts/${id}/matches${qs({ limit: 6 })}`),
   ]);
 
+  // Defaulted rather than trusted. The frontend and the API deploy separately
+  // (Vercel and Render), so a frontend release can land minutes before the
+  // backend that added a field — and reading .length off undefined 500s the
+  // whole lead page rather than degrading.
+  const assignees = contact.assignees ?? [];
   const name = fullName(contact);
   const canShowProperty = user?.role === "owner" || user?.role === "agent";
 
@@ -103,7 +115,13 @@ export default async function ContactDetail({
             />
             {contact.owner_name && (
               <span className="text-xs text-ink-muted">
-                Assigned to {contact.owner_name}
+                Owned by {contact.owner_name}
+              </span>
+            )}
+            {assignees.length > 0 && (
+              <span className="text-right text-xs text-ink-muted">
+                Also with{" "}
+                {assignees.map((a) => a.name).join(", ")}
               </span>
             )}
           </div>
@@ -166,6 +184,23 @@ export default async function ContactDetail({
         )}
 
         <div className="space-y-5">
+          {/* Owner only: assignment widens who can see the lead, so the
+              capability is theirs alone and the API refuses anyone else. */}
+          {staff && (
+            <Card className="p-5">
+              <SectionHeading
+                title="Working this lead"
+                hint="Alongside its owner"
+              />
+              <AssignLead
+                contactId={contact.id}
+                contactName={name}
+                assignees={assignees}
+                staff={staff}
+              />
+            </Card>
+          )}
+
           {contact.email && (
             <Card className="p-5">
               <SectionHeading title="Contact" />

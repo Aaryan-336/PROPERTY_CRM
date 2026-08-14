@@ -56,6 +56,11 @@ export async function GET(request: Request, ctx: Ctx) {
 export async function POST(request: Request, ctx: Ctx) {
   return forward(request, (await ctx.params).path);
 }
+// PUT was missing until an endpoint needed it, and its absence showed up as a
+// bare 405 with an empty body — nothing in the app said which layer refused.
+export async function PUT(request: Request, ctx: Ctx) {
+  return forward(request, (await ctx.params).path);
+}
 export async function PATCH(request: Request, ctx: Ctx) {
   return forward(request, (await ctx.params).path);
 }

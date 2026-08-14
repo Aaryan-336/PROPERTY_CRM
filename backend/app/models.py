@@ -235,6 +235,46 @@ class Contact(Base):
         return f"{self.first_name} {self.last_name or ''}".strip()
 
 
+class ContactAssignment(Base):
+    """An extra staff member working a lead, beyond its owner.
+
+    ``Contact.owner_id`` answers "whose lead is this" and stays single: one
+    person is accountable, and the call queue is built from it. This table
+    answers the different question of who else has been asked to work it —
+    a closer brought in on a hot lead, two agents covering different sites.
+
+    Kept as rows rather than an array column because each one carries who
+    assigned it and when, which is what makes the audit trail readable, and
+    because the scoping predicate in app/scoping.py has to join against it.
+    """
+
+    __tablename__ = "contact_assignments"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    contact_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("contacts.id"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id"), nullable=False
+    )
+    assigned_by: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id")
+    )
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        # Assigning the same person twice is a no-op, not a second assignment.
+        UniqueConstraint("contact_id", "user_id", name="uq_assignment_pair"),
+        # Both directions are hot: the scoping predicate looks up by user, the
+        # contact detail screen looks up by contact.
+        Index("idx_assignments_user", "user_id"),
+        Index("idx_assignments_contact", "contact_id"),
+    )
+
+
 class LeadBatch(Base):
     """One uploaded calling list.
 

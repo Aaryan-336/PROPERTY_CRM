@@ -35,6 +35,8 @@ Base: REST, JSON, JWT bearer auth. Every endpoint below is subject to the role s
 | POST | `/contacts/bulk-import/preview` | Owner only — parse an Excel/CSV calling list and report what would happen, writing nothing. Detects the header row under title rows, maps columns by alias, and falls back to value-sniffing when headers are unrecognised or absent. |
 | GET | `/lead-batches` | Owner only — every uploaded calling list with live conversion numbers: size, called, reached, leads produced, and rates. Rates are `null`, not 0, when the denominator is empty. |
 | GET | `/lead-batches/{id}` | One database's performance. |
+| GET | `/contacts/{id}/assignees` | Staff working this lead besides its owner. Scoped like any other read. |
+| PUT | `/contacts/{id}/assignees` | Owner only. Body is the complete desired set, not a delta, so unticking removes. Each new assignee gets a follow-up Task and gains read access to that contact — see the widened predicate in `app/scoping.py`. Removing someone cancels their open task on it. |
 | POST | `/contacts/bulk-import` | Owner only — import and assign. `assign_to` accepts several staff ids and deals rows round-robin. Setting `owner_id` is what places a lead in that person's `/call-queue`. Existing leads are skipped via the contact dedup in `app/dedup.py`. Audited with counts and recipients. |
 | GET | `/contacts/export` | Owner/Manager only; audit-logged with row count |
 

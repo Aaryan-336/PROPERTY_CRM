@@ -50,6 +50,45 @@ class LoginResponse(BaseModel):
 MIN_PASSWORD_LENGTH = 8
 
 
+class Assignee(BaseModel):
+    user_id: int
+    name: str
+    role: str
+    assigned_by_name: str | None = None
+    created_at: datetime
+    note: str | None = None
+
+
+class AssignRequest(BaseModel):
+    """Who should be working this lead, besides its owner.
+
+    The full desired set, not a delta: the UI is a list of checkboxes, and
+    sending the state of that list means unticking someone removes them without
+    a second call. A caller sending an empty list is clearing the assignments,
+    which is a legitimate thing to want.
+    """
+
+    user_ids: list[int] = Field(
+        description="Staff to assign. Send the complete set; omissions are removed."
+    )
+    note: str | None = Field(
+        default=None,
+        max_length=280,
+        description="Why, shown on the task each assignee gets.",
+    )
+    due_at: datetime | None = Field(
+        default=None, description="Deadline for the task. Defaults to 24h out."
+    )
+
+
+class AssignResponse(BaseModel):
+    contact_id: int
+    assignees: list[Assignee]
+    added: list[str]
+    removed: list[str]
+    tasks_created: int
+
+
 class PasswordChange(BaseModel):
     """Self-service change. The current password is required.
 
@@ -265,6 +304,8 @@ class ContactOut(BaseModel):
     # "mark as a lead" control is offered when logging a call.
     is_lead: bool = True
     batch_id: int | None = None
+    # Staff working this lead in addition to its owner. Empty for most leads.
+    assignees: list[Assignee] = Field(default_factory=list)
     owner_id: int | None = None
     owner_name: str | None = None
     created_at: datetime

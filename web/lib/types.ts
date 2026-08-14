@@ -11,6 +11,15 @@ export type User = {
   deleted_at?: string | null;
 };
 
+export type Assignee = {
+  user_id: number;
+  name: string;
+  role: Role;
+  assigned_by_name: string | null;
+  created_at: string;
+  note: string | null;
+};
+
 export type Contact = {
   id: number;
   first_name: string;
@@ -21,6 +30,8 @@ export type Contact = {
   /** False for an imported number nobody has flagged as a lead yet. */
   is_lead: boolean;
   batch_id: number | null;
+  /** Staff working this lead in addition to its owner. Usually empty. */
+  assignees: Assignee[];
   lead_source: string | null;
   campaign: string | null;
   budget_min: string | null;

@@ -16,10 +16,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import Select, false, select
+from sqlalchemy import Select, false, or_, select
 
 from app.db import SCOPE_MARKER
 from app.models import (
+    ContactAssignment,
     ROLE_AGENT,
     ROLE_OWNER,
     Activity,
@@ -89,7 +90,20 @@ class ScopedQuery:
         """
         stmt = select(Contact).where(Contact.deleted_at.is_(None))
         if not self.principal.sees_everything:
-            stmt = stmt.where(Contact.owner_id == self.principal.id)
+            # Two ways a lead is yours: you own it, or the owner has assigned
+            # you to it as well. The second is a subquery rather than a join so
+            # a contact with three assignees still yields one row -- a join here
+            # would duplicate rows and quietly inflate every count and page
+            # built on this statement.
+            assigned = select(ContactAssignment.contact_id).where(
+                ContactAssignment.user_id == self.principal.id
+            )
+            stmt = stmt.where(
+                or_(
+                    Contact.owner_id == self.principal.id,
+                    Contact.id.in_(assigned),
+                )
+            )
         return _mark(stmt)
 
     def properties(self) -> Select:

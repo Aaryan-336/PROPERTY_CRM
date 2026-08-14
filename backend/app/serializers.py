@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession
 
-from app.db import SCOPE_MARKER
+from app.db import SCOPE_MARKER, system_scope
 from app.masking import (
     contacts_with_logged_interaction,
     mask_email,
@@ -83,6 +83,7 @@ def serialize_contacts(
     worked = contacts_with_logged_interaction(db, principal, ids)
     names = user_names(db, [c.owner_id for c in rows])
     last_seen = last_activity_map(db, ids) if include_last_activity else {}
+    assignees = assignee_map(db, ids)
 
     out: list[ContactOut] = []
     for c in rows:
@@ -106,6 +107,7 @@ def serialize_contacts(
                 stage=c.stage,
                 is_lead=c.is_lead,
                 batch_id=c.batch_id,
+                assignees=assignees.get(c.id, []),
                 owner_id=c.owner_id,
                 owner_name=names.get(c.owner_id) if c.owner_id else None,
                 created_at=c.created_at,
@@ -120,3 +122,36 @@ def serialize_contact(
     db: DbSession, principal: Principal, row: Contact
 ) -> ContactOut:
     return serialize_contacts(db, principal, [row])[0]
+
+
+def assignee_map(db: DbSession, contact_ids: list[int]) -> dict[int, list]:
+    """Extra staff per contact, for a whole page in one query.
+
+    Per-row lookups would make a 50-lead page 50 extra round trips; most leads
+    have no assignees at all, so the map is usually small.
+    """
+    from app.models import ContactAssignment
+    from app.schemas import Assignee
+
+    if not contact_ids:
+        return {}
+
+    out: dict[int, list] = {}
+    with system_scope():
+        rows = db.execute(
+            select(ContactAssignment, User)
+            .join(User, User.id == ContactAssignment.user_id)
+            .where(ContactAssignment.contact_id.in_(contact_ids))
+            .order_by(ContactAssignment.created_at.desc())
+        ).all()
+    for assignment, user in rows:
+        out.setdefault(assignment.contact_id, []).append(
+            Assignee(
+                user_id=assignment.user_id,
+                name=user.name,
+                role=user.role,
+                created_at=assignment.created_at,
+                note=assignment.note,
+            )
+        )
+    return out

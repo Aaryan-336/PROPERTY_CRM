@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, or_, select
+from sqlalchemy.orm import aliased
 
 from app.db import system_scope
 from app.dedup import find_duplicates, to_response
@@ -21,9 +22,19 @@ from app.deps import (
     require,
 )
 from app.errors import ApiError, bad_request, not_found
-from app.models import Activity, Contact, LeadBatch, User
+from app.models import (
+    Activity,
+    Contact,
+    ContactAssignment,
+    LeadBatch,
+    Task,
+    User,
+)
 from app.rbac import assert_capability, assert_contact_fields_writable
 from app.schemas import (
+    AssignRequest,
+    AssignResponse,
+    Assignee,
     ImportAssignment,
     ImportPreview,
     ImportResult,
@@ -34,6 +45,7 @@ from app.schemas import (
     Paged,
     ReassignRequest,
 )
+from app.push import send_to_users
 from app.serializers import serialize_contact, serialize_contacts
 
 router = APIRouter(tags=["contacts"])
@@ -625,3 +637,190 @@ def reassign_contact(
         reason=payload.reason,
     )
     return serialize_contact(db, principal, contact)
+
+
+@router.get("/contacts/{contact_id}/assignees", response_model=list[Assignee])
+def list_assignees(
+    contact_id: int, scoped: ScopedDep, db: SessionDep
+) -> list[Assignee]:
+    """Who else is working this lead.
+
+    Scoped like any other read: you can only ask about a contact you can
+    already see, so this cannot be used to enumerate the firm's staff against
+    leads you have no access to.
+    """
+    contact = db.execute(
+        scoped.contacts().where(Contact.id == contact_id)
+    ).scalar_one_or_none()
+    if contact is None:
+        raise not_found("Contact")
+    return _assignees(db, contact_id)
+
+
+@router.put(
+    "/contacts/{contact_id}/assignees",
+    response_model=AssignResponse,
+    dependencies=[Depends(require("contacts.reassign"))],
+)
+def set_assignees(
+    contact_id: int,
+    payload: AssignRequest,
+    db: SessionDep,
+    principal: PrincipalDep,
+    request: Request,
+) -> AssignResponse:
+    """Put a lead in front of one or more staff members.
+
+    PUT rather than POST because the body is the desired set, not an addition —
+    the screen behind it is a list of checkboxes, and unticking someone has to
+    remove them without a second request.
+
+    Each newly assigned person gets a Task, which is what makes the assignment
+    show up as work rather than as a silent permission change: the lead appears
+    in their follow-ups with a due date, and nothing about this feature requires
+    them to go looking for it.
+
+    Assignment also widens what they can see — app/scoping.py treats an
+    assignment as access to that contact — so this is Owner-only, under the same
+    capability as reassignment.
+    """
+    with system_scope():
+        contact = db.get(Contact, contact_id)
+    if contact is None or contact.deleted_at is not None:
+        raise not_found("Contact")
+
+    wanted = [i for i in dict.fromkeys(payload.user_ids) if i]
+
+    with system_scope():
+        staff = (
+            db.execute(
+                select(User)
+                .where(User.id.in_(wanted))
+                .where(User.deleted_at.is_(None))
+            )
+            .scalars()
+            .all()
+            if wanted
+            else []
+        )
+    if len(staff) != len(wanted):
+        missing = set(wanted) - {u.id for u in staff}
+        raise bad_request(
+            "unknown_user", f"No active staff member with id {sorted(missing)}."
+        )
+
+    with system_scope():
+        existing = {
+            row.user_id: row
+            for row in db.execute(
+                select(ContactAssignment).where(
+                    ContactAssignment.contact_id == contact_id
+                )
+            ).scalars()
+        }
+
+    by_id = {u.id: u for u in staff}
+    to_add = [uid for uid in wanted if uid not in existing]
+    to_remove = [uid for uid in existing if uid not in wanted]
+
+    due = payload.due_at or datetime.now(timezone.utc) + timedelta(hours=24)
+    tasks_created = 0
+
+    for uid in to_add:
+        db.add(
+            ContactAssignment(
+                contact_id=contact_id,
+                user_id=uid,
+                assigned_by=principal.id,
+                note=payload.note,
+            )
+        )
+        db.add(
+            Task(
+                contact_id=contact_id,
+                assigned_to=uid,
+                created_by=principal.id,
+                title=f"Work {contact.full_name}"
+                + (f" — {payload.note}" if payload.note else ""),
+                due_at=due,
+                status="pending",
+            )
+        )
+        tasks_created += 1
+
+    for uid in to_remove:
+        db.delete(existing[uid])
+        # Their open task for this lead goes too. Leaving it would show them
+        # work on a contact they can no longer open, which reads as a bug.
+        with system_scope():
+            orphaned = (
+                db.execute(
+                    select(Task)
+                    .where(Task.contact_id == contact_id)
+                    .where(Task.assigned_to == uid)
+                    .where(Task.status == "pending")
+                )
+                .scalars()
+                .all()
+            )
+        for task in orphaned:
+            task.status = "cancelled"
+
+    db.commit()
+
+    request.state.audit.set_resource(contact_id)
+    request.state.audit.add(
+        assigned=to_add,
+        unassigned=to_remove,
+        tasks_created=tasks_created,
+    )
+
+    if to_add:
+        send_to_users(
+            db,
+            to_add,
+            title="Lead assigned to you",
+            body=f"{principal.name} assigned you {contact.full_name}"
+            + (f" — {payload.note}" if payload.note else ""),
+            url=f"/contacts/{contact_id}",
+            tag="assignment",
+        )
+
+    names = {u.id: u.name for u in staff}
+    return AssignResponse(
+        contact_id=contact_id,
+        assignees=_assignees(db, contact_id),
+        added=[names[uid] for uid in to_add],
+        removed=[_name_of(db, uid) for uid in to_remove],
+        tasks_created=tasks_created,
+    )
+
+
+def _name_of(db: SessionDep, user_id: int) -> str:
+    with system_scope():
+        user = db.get(User, user_id)
+    return user.name if user else str(user_id)
+
+
+def _assignees(db: SessionDep, contact_id: int) -> list[Assignee]:
+    """Current assignees, newest first, with who put them there."""
+    assigner = aliased(User)
+    with system_scope():
+        rows = db.execute(
+            select(ContactAssignment, User, assigner)
+            .join(User, User.id == ContactAssignment.user_id)
+            .outerjoin(assigner, assigner.id == ContactAssignment.assigned_by)
+            .where(ContactAssignment.contact_id == contact_id)
+            .order_by(ContactAssignment.created_at.desc())
+        ).all()
+    return [
+        Assignee(
+            user_id=a.user_id,
+            name=u.name,
+            role=u.role,
+            assigned_by_name=by.name if by else None,
+            created_at=a.created_at,
+            note=a.note,
+        )
+        for a, u, by in rows
+    ]
