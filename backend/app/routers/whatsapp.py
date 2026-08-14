@@ -43,6 +43,7 @@ from app.models import (
     PropertySource,
     WhatsAppGroup,
     WhatsAppMessage,
+    WhatsAppSession,
 )
 from app.schemas import (
     IngestionStatus,
@@ -55,6 +56,8 @@ from app.schemas import (
     WhatsAppGroupOut,
     WhatsAppGroupUpdate,
     WhatsAppMessageOut,
+    SessionOut,
+    SessionReport,
 )
 
 router = APIRouter(tags=["whatsapp"])
@@ -596,3 +599,113 @@ def reprocess_message(
     message.error = None
     db.commit()
     request.state.audit.add(reprocessed=True, message_id=message_id)
+
+
+# ---------------------------------------------------------------------------
+# Pairing (gateway <-> API <-> owner's browser)
+# ---------------------------------------------------------------------------
+
+# How long after the gateway's last report we stop believing its state. It
+# reports on every socket event and heartbeats between them, so silence this
+# long means the process is gone, not idle.
+SESSION_STALE_AFTER = timedelta(seconds=90)
+
+
+@router.post(
+    "/internal/whatsapp/session",
+    tags=["internal"],
+    summary="Gateway reports its connection state (HMAC-authenticated)",
+)
+async def report_session(request: Request, db: SessionDep) -> dict:
+    """The gateway pushing its socket state, including the pairing QR.
+
+    Same HMAC as the ingest webhook, and for the same reason: the gateway has
+    no user identity, and this endpoint is what puts a scannable QR on the
+    owner's screen — anyone who could write here could show the owner a QR that
+    links *their* account instead.
+    """
+    body = await request.body()
+    verify_gateway_signature(
+        body,
+        request.headers.get("x-balaji-signature"),
+        request.headers.get("x-balaji-timestamp"),
+    )
+    payload = SessionReport.model_validate_json(body)
+
+    now = datetime.now(timezone.utc)
+    with system_scope():
+        session = db.get(WhatsAppSession, 1)
+        if session is None:
+            session = WhatsAppSession(id=1)
+            db.add(session)
+
+        session.state = payload.state
+        # Only a `qr` report carries one. Clearing it on every other state is
+        # what stops a scanned-and-spent QR lingering on the screen.
+        session.qr = payload.qr if payload.state == "qr" else None
+        session.qr_expires_at = (
+            now + timedelta(seconds=payload.qr_ttl_seconds or 20)
+            if payload.state == "qr"
+            else None
+        )
+        if payload.jid:
+            session.jid = payload.jid
+        if payload.display_name:
+            session.display_name = payload.display_name
+        session.last_error = payload.last_error
+        session.updated_at = now
+        db.commit()
+
+    return {"ok": True}
+
+
+@router.get(
+    "/whatsapp/session",
+    response_model=SessionOut,
+    dependencies=[Depends(require("whatsapp.manage"))],
+)
+def get_session(db: SessionDep, request: Request) -> SessionOut:
+    """Connection state for the owner's pairing screen.
+
+    Polled every couple of seconds while a QR is on screen, so it is
+    deliberately cheap: one row plus a count.
+
+    Owner-only under the same capability as group management. The QR here is a
+    live credential — scanning it links a WhatsApp account to this deployment —
+    so it must never be readable by staff.
+    """
+    now = datetime.now(timezone.utc)
+    with system_scope():
+        session = db.get(WhatsAppSession, 1)
+        watched = db.execute(
+            select(func.count())
+            .select_from(WhatsAppGroup)
+            .where(WhatsAppGroup.is_active.is_(True))
+        ).scalar_one()
+
+    if session is None:
+        return SessionOut(
+            state="disconnected",
+            updated_at=now,
+            stale=True,
+            watched_groups=watched,
+        )
+
+    stale = (now - session.updated_at) > SESSION_STALE_AFTER
+    expired = session.qr_expires_at is not None and session.qr_expires_at <= now
+
+    request.state.audit.add(state=session.state, stale=stale)
+
+    return SessionOut(
+        state=session.state,
+        # Never hand back a QR that has already rotated. It would render
+        # perfectly and fail on the phone with no explanation.
+        qr=None if (expired or stale) else session.qr,
+        qr_expires_at=session.qr_expires_at,
+        jid=session.jid,
+        display_name=session.display_name,
+        last_error=session.last_error,
+        updated_at=session.updated_at,
+        stale=stale,
+        watched_groups=watched,
+    )

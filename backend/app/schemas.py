@@ -50,6 +50,36 @@ class LoginResponse(BaseModel):
 MIN_PASSWORD_LENGTH = 8
 
 
+class SessionReport(BaseModel):
+    """The gateway telling the API what its WhatsApp socket is doing."""
+
+    state: Literal["disconnected", "connecting", "qr", "connected", "logged_out"]
+    qr: str | None = None
+    # Seconds the QR stays valid. WhatsApp rotates roughly every 20s; the API
+    # turns this into an absolute expiry so the browser is never comparing
+    # against the gateway's clock.
+    qr_ttl_seconds: int | None = Field(default=None, ge=1, le=300)
+    jid: str | None = None
+    display_name: str | None = None
+    last_error: str | None = None
+
+
+class SessionOut(BaseModel):
+    """What the owner's pairing screen renders."""
+
+    state: Literal["disconnected", "connecting", "qr", "connected", "logged_out"]
+    qr: str | None = None
+    qr_expires_at: datetime | None = None
+    jid: str | None = None
+    display_name: str | None = None
+    last_error: str | None = None
+    updated_at: datetime
+    # True when the gateway has not reported recently enough to be believed.
+    # A crashed gateway leaves state="connected" behind forever otherwise.
+    stale: bool
+    watched_groups: int
+
+
 class Assignee(BaseModel):
     user_id: int
     name: str

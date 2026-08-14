@@ -235,6 +235,58 @@ class Contact(Base):
         return f"{self.first_name} {self.last_name or ''}".strip()
 
 
+# What the gateway is currently doing, as far as the API knows. The owner's
+# screen is built entirely from this, so the vocabulary is chosen to be
+# answerable from the browser without guessing:
+WA_DISCONNECTED = "disconnected"   # gateway not running, or has not reported yet
+WA_CONNECTING = "connecting"       # socket opening
+WA_QR = "qr"                       # waiting for a phone to scan `qr`
+WA_CONNECTED = "connected"         # linked and reading
+WA_LOGGED_OUT = "logged_out"       # device removed from the phone; needs re-pair
+WA_SESSION_STATES = (
+    WA_DISCONNECTED,
+    WA_CONNECTING,
+    WA_QR,
+    WA_CONNECTED,
+    WA_LOGGED_OUT,
+)
+
+
+class WhatsAppSession(Base):
+    """The gateway's connection state, so pairing can happen in the browser.
+
+    Pairing was terminal-only: run `npm run pair`, scan the QR printed as ASCII.
+    That is fine for the person who deployed it and useless for the owner, who
+    is the one holding the phone.
+
+    Exactly one row. The gateway reports into it and the owner's screen polls
+    it. The QR itself is short-lived — WhatsApp rotates it every twenty seconds
+    or so — which is why `qr_expires_at` is stored rather than inferred: a
+    stale QR that still renders is worse than none, because it fails silently
+    on the phone with no explanation.
+    """
+
+    __tablename__ = "whatsapp_session"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    state: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=WA_DISCONNECTED
+    )
+    qr: Mapped[str | None] = mapped_column(Text)
+    qr_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Which account is linked, so the owner can see at a glance that it is the
+    # dedicated number and not somebody's personal one.
+    jid: Mapped[str | None] = mapped_column(Text)
+    display_name: Mapped[str | None] = mapped_column(Text)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    # Heartbeat. A gateway that has crashed leaves `state` saying "connected"
+    # forever; the screen uses this to say "last heard from 20 minutes ago"
+    # instead of showing a comforting lie.
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class ContactAssignment(Base):
     """An extra staff member working a lead, beyond its owner.
 

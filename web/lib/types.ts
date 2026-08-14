@@ -419,3 +419,19 @@ export type BatchPerformance = {
   assigned_to: string[];
   last_activity_at: string | null;
 };
+
+
+/** Gateway connection state, for the pairing screen. */
+export type WhatsAppSession = {
+  state: "disconnected" | "connecting" | "qr" | "connected" | "logged_out";
+  /** The raw pairing payload. Withheld once rotated or if the gateway is stale. */
+  qr: string | null;
+  qr_expires_at: string | null;
+  jid: string | null;
+  display_name: string | null;
+  last_error: string | null;
+  updated_at: string;
+  /** The gateway has not reported recently enough to be believed. */
+  stale: boolean;
+  watched_groups: number;
+};

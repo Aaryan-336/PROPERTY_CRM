@@ -52,6 +52,25 @@ export async function sendBatch(messages) {
 }
 
 /**
+ * Tell the API what the WhatsApp socket is doing, including the pairing QR.
+ *
+ * This is what lets the owner pair from the browser instead of reading ASCII
+ * art out of a terminal on whatever box this runs on. It is best-effort on
+ * purpose: if the API is down, the gateway must keep reading messages and
+ * journalling them, and a failed status ping is not a reason to stop.
+ */
+export async function reportSession(report) {
+  try {
+    await post("/internal/whatsapp/session", report);
+  } catch (error) {
+    // Debug, not warn. A gateway that cannot reach the API already says so
+    // loudly on every delivery attempt; repeating it per heartbeat is noise.
+    return { failed: error.message };
+  }
+  return { ok: true };
+}
+
+/**
  * Fetch the owner's watch list.
  *
  * The API is the single source of truth for which groups are monitored -- the

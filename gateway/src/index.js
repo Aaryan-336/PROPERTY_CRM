@@ -39,6 +39,7 @@ import process from "node:process";
 // makeWASocket itself). Destructuring off the default export works on some
 // versions and silently yields `undefined` on others, so import them by name.
 import {
+  Browsers,
   DisconnectReason,
   fetchLatestBaileysVersion,
   makeWASocket,
@@ -52,6 +53,7 @@ import {
   appendToOutbox,
   fetchWatchedGroups,
   readOutbox,
+  reportSession,
   rewriteOutbox,
   sendBatch,
 } from "./ingest.js";
@@ -76,6 +78,10 @@ const GROUP_FILTER = process.argv
 
 /** group_jid -> name, refreshed from the API so the CRM stays authoritative. */
 let watched = new Map();
+// Mirrors the socket state for the heartbeat above, which fires on a timer and
+// so cannot read it from the event that last changed it.
+let connected = false;
+let currentJid = null;
 let flushing = false;
 let retryDelay = config.retryBaseMs;
 let shuttingDown = false;
@@ -207,6 +213,16 @@ async function connect() {
     // the groups and more account activity than the job needs.
     markOnlineOnConnect: false,
     syncFullHistory: false,
+    // Present as an ordinary desktop WhatsApp Web session. Baileys' default
+    // descriptor announces the library by name in the linked-devices list on
+    // the phone and in whatever WhatsApp records server-side; there is no
+    // reason to be the one device on the account that looks automated.
+    browser: Browsers.macOS("Desktop"),
+    // Belt and braces with syncFullHistory. A fresh pairing otherwise pulls
+    // months of scrollback across hundreds of groups in a burst — the single
+    // most abnormal-looking thing a new device can do, and useless here since
+    // MAX_MESSAGE_AGE_MS discards it anyway.
+    shouldSyncHistoryMessage: () => false,
   });
 
   socket.ev.on("creds.update", saveCreds);
@@ -220,10 +236,22 @@ async function connect() {
           "(Settings -> Linked devices -> Link a device):\n",
       );
       qrcode.generate(qr, { small: true });
+      // Also to the CRM, so the owner can scan it from the Inventory feed
+      // screen rather than from whatever terminal this is running in.
+      // WhatsApp rotates the code roughly every 20s and emits a fresh one, so
+      // each report supersedes the last.
+      void reportSession({ state: "qr", qr, qr_ttl_seconds: 20 });
     }
 
     if (connection === "open") {
       log.info("connected to WhatsApp");
+      connected = true;
+      currentJid = socket.user?.id ?? null;
+      void reportSession({
+        state: "connected",
+        jid: currentJid,
+        display_name: socket.user?.name ?? null,
+      });
       if (PAIR_ONLY) {
         log.info("pairing complete; session saved. Re-run with `npm start`.");
         setTimeout(() => process.exit(0), 1500);
@@ -238,9 +266,18 @@ async function connect() {
       await flushOutbox();
     }
 
+    if (connection === "connecting") {
+      void reportSession({ state: "connecting" });
+    }
+
     if (connection === "close") {
       const status = lastDisconnect?.error?.output?.statusCode;
       const loggedOut = status === DisconnectReason.loggedOut;
+      connected = false;
+      void reportSession({
+        state: loggedOut ? "logged_out" : "disconnected",
+        last_error: lastDisconnect?.error?.message ?? null,
+      });
       if (loggedOut) {
         // The session was revoked from the phone. Reconnecting in a loop would
         // never succeed; a human has to re-pair.
@@ -326,6 +363,16 @@ async function main() {
     await refreshWatchedGroups();
     setInterval(refreshWatchedGroups, config.groupRefreshMs);
     setInterval(flushOutbox, config.flushIntervalMs);
+
+    // Heartbeat, so the CRM can tell "connected" from "was connected when this
+    // process died". Socket events alone cannot: a killed gateway sends no
+    // "close", and the last thing the API heard would be "connected" forever.
+    // Comfortably inside the API's 90s staleness window.
+    setInterval(() => {
+      if (connected) {
+        void reportSession({ state: "connected", jid: currentJid });
+      }
+    }, 30_000);
   }
 
   await connect();
