@@ -26,12 +26,18 @@
  * reconnect replays rather than loses or doubles.
  *
  * Usage:
- *   npm run pair          # first-time QR pairing
- *   npm run groups        # print group ids, to paste into the CRM
- *   npm start             # run the gateway
+ *   npm start             # run the gateway; pairing happens from the CRM
+ *   npm run pair          # optional: pair from this terminal instead
+ *   npm run groups        # optional: print group ids to the terminal
+ *
+ * `npm start` is the only one an owner needs. Once this process is running,
+ * "Connect WhatsApp" in the CRM asks it for a QR and the group list arrives on
+ * its own -- the two terminal commands above are for whoever deploys it, and
+ * kept only because a broken deployment is easier to diagnose from a shell.
  */
 
 import fs from "node:fs";
+import http from "node:http";
 import path from "node:path";
 import process from "node:process";
 
@@ -51,7 +57,9 @@ import qrcode from "qrcode-terminal";
 import { config } from "./config.js";
 import {
   appendToOutbox,
+  fetchCommands,
   fetchWatchedGroups,
+  pushDirectory,
   readOutbox,
   reportSession,
   rewriteOutbox,
@@ -78,13 +86,25 @@ const GROUP_FILTER = process.argv
 
 /** group_jid -> name, refreshed from the API so the CRM stays authoritative. */
 let watched = new Map();
-// Mirrors the socket state for the heartbeat above, which fires on a timer and
-// so cannot read it from the event that last changed it.
+// Mirrors the socket state for the heartbeat, which fires on a timer and so
+// cannot read it from the event that last changed it.
 let connected = false;
 let currentJid = null;
+let currentState = "connecting";
 let flushing = false;
 let retryDelay = config.retryBaseMs;
 let shuttingDown = false;
+
+let socket = null;
+// Every socket gets a number, and its event handlers ignore anything that
+// arrives after a newer socket has replaced it. Without this, closing a socket
+// to re-pair fires a `close` that schedules a reconnect of the *old* creds,
+// and two sockets end up racing on one account -- which looks exactly like the
+// abuse WhatsApp bans for.
+let generation = 0;
+let repairing = false;
+let lastPairAt = 0;
+let lastDirectorySync = 0;
 
 // ---------------------------------------------------------------------------
 // Watch list
@@ -199,11 +219,15 @@ function handleMessage(message) {
 // ---------------------------------------------------------------------------
 
 async function connect() {
+  // Claim a generation before anything async: two overlapping calls to connect
+  // must not both believe they own the live socket.
+  const mine = ++generation;
+
   fs.mkdirSync(config.authDir, { recursive: true, mode: 0o700 });
   const { state, saveCreds } = await useMultiFileAuthState(config.authDir);
   const { version } = await fetchLatestBaileysVersion();
 
-  const socket = makeWASocket({
+  const sock = makeWASocket({
     version,
     auth: state,
     // Baileys' own logging is extremely verbose and would bury ours.
@@ -225,32 +249,39 @@ async function connect() {
     shouldSyncHistoryMessage: () => false,
   });
 
-  socket.ev.on("creds.update", saveCreds);
+  socket = sock;
+  sock.ev.on("creds.update", saveCreds);
 
-  socket.ev.on("connection.update", async (update) => {
+  sock.ev.on("connection.update", async (update) => {
+    // A superseded socket still emits. Acting on it would report a dead
+    // connection's state over a live one's, or reconnect creds we just wiped.
+    if (mine !== generation) return;
+
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
+      // Still printed for whoever is watching a terminal, but the CRM is now
+      // the expected place to scan from. WhatsApp rotates the code roughly
+      // every 20s and emits a fresh one, so each report supersedes the last.
       console.log(
         "\nScan this with the dedicated WhatsApp account " +
-          "(Settings -> Linked devices -> Link a device):\n",
+          "(Settings -> Linked devices -> Link a device), " +
+          "or open Inventory feed in the CRM:\n",
       );
       qrcode.generate(qr, { small: true });
-      // Also to the CRM, so the owner can scan it from the Inventory feed
-      // screen rather than from whatever terminal this is running in.
-      // WhatsApp rotates the code roughly every 20s and emits a fresh one, so
-      // each report supersedes the last.
+      currentState = "qr";
       void reportSession({ state: "qr", qr, qr_ttl_seconds: 20 });
     }
 
     if (connection === "open") {
       log.info("connected to WhatsApp");
       connected = true;
-      currentJid = socket.user?.id ?? null;
+      currentState = "connected";
+      currentJid = sock.user?.id ?? null;
       void reportSession({
         state: "connected",
         jid: currentJid,
-        display_name: socket.user?.name ?? null,
+        display_name: sock.user?.name ?? null,
       });
       if (PAIR_ONLY) {
         log.info("pairing complete; session saved. Re-run with `npm start`.");
@@ -258,15 +289,20 @@ async function connect() {
         return;
       }
       if (LIST_GROUPS) {
-        await printGroups(socket);
+        await printGroups(sock);
         setTimeout(() => process.exit(0), 500);
         return;
       }
       await refreshWatchedGroups();
+      // The owner's group picker is populated from this. Doing it on every
+      // connect is what makes a freshly paired account immediately pickable
+      // instead of empty until somebody remembers to refresh.
+      await syncDirectory({ force: true });
       await flushOutbox();
     }
 
     if (connection === "connecting") {
+      currentState = "connecting";
       void reportSession({ state: "connecting" });
     }
 
@@ -274,26 +310,37 @@ async function connect() {
       const status = lastDisconnect?.error?.output?.statusCode;
       const loggedOut = status === DisconnectReason.loggedOut;
       connected = false;
+      currentState = loggedOut ? "logged_out" : "disconnected";
       void reportSession({
-        state: loggedOut ? "logged_out" : "disconnected",
+        state: currentState,
         last_error: lastDisconnect?.error?.message ?? null,
       });
+
       if (loggedOut) {
-        // The session was revoked from the phone. Reconnecting in a loop would
-        // never succeed; a human has to re-pair.
+        // The device was removed from the phone. Reconnecting with revoked
+        // creds only ever fails, so the socket is dropped -- but the process
+        // stays up, because it is the only thing that can produce a new QR and
+        // the owner is about to ask it for one from the CRM. Exiting here used
+        // to mean somebody had to SSH in and restart it first.
+        socket = null;
         log.error(
           "logged out — the linked device was removed. " +
-            `Delete ${config.authDir} and run \`npm run pair\` again.`,
+            "Press Connect WhatsApp in the CRM (Inventory feed) to re-pair.",
         );
-        process.exit(1);
+        return;
       }
       if (shuttingDown) return;
       log.warn(`connection closed (${status}); reconnecting in 5s`);
-      setTimeout(connect, 5000);
+      setTimeout(() => {
+        // Same guard: a reconnect scheduled before a re-pair must not fire
+        // after it and resurrect the session we deliberately cleared.
+        if (mine === generation) void connect();
+      }, 5000);
     }
   });
 
-  socket.ev.on("messages.upsert", ({ messages, type }) => {
+  sock.ev.on("messages.upsert", ({ messages, type }) => {
+    if (mine !== generation) return;
     // 'notify' is live traffic; 'append' is history sync, which we skip so a
     // reconnect does not re-ingest the backlog.
     if (type !== "notify") return;
@@ -306,20 +353,122 @@ async function connect() {
     }
   });
 
-  return socket;
+  return sock;
 }
 
-async function printGroups(socket) {
-  const groups = await socket.groupFetchAllParticipating();
-  // Keyed by id rather than read off the value: a group's metadata can arrive
-  // before its subject has synced, and one nameless group used to take the
-  // whole listing down on sort — hiding every other id the owner came for.
-  const rows = Object.entries(groups).map(([id, g]) => ({
+/**
+ * Read the account's group list off WhatsApp and hand it to the CRM.
+ *
+ * One call to WhatsApp, and it is the whole reason the owner no longer has to
+ * transcribe `120363…@g.us` ids out of a terminal. Rate-limited because the
+ * "Refresh group list" button is one tap: an impatient owner tapping it six
+ * times must not become six metadata sweeps on the account.
+ */
+async function syncDirectory({ force = false } = {}) {
+  if (!socket || !connected) return;
+  if (!force && Date.now() - lastDirectorySync < 20_000) return;
+  lastDirectorySync = Date.now();
+
+  try {
+    const rows = groupRows(await socket.groupFetchAllParticipating()).map((r) => ({
+      group_jid: r.id,
+      // Empty, not a placeholder: the API keeps the last real name it saw
+      // rather than overwriting it with "(name not synced yet)".
+      name: r.synced ? r.name : "",
+      participants: r.participants,
+    }));
+    const result = await pushDirectory(rows);
+    if (result.failed) {
+      log.warn(`could not upload group list (${result.failed})`);
+      return;
+    }
+    log.info(`uploaded ${rows.length} group(s) to the CRM picker`);
+  } catch (error) {
+    log.warn(`could not read the group list (${error.message})`);
+  }
+}
+
+/**
+ * Clear the saved session and start a fresh pairing, on the owner's say-so.
+ *
+ * The destructive half of the Connect button: whatever account is linked stops
+ * being linked. Two guards, both about not getting the number flagged --
+ * `repairing` stops overlapping attempts, and the cooldown stops a double tap
+ * (or a command replayed after a crash) from relinking twice in a row.
+ */
+async function startFreshPairing() {
+  if (repairing) {
+    log.debug("re-pair already in progress; ignoring");
+    return;
+  }
+  const since = Date.now() - lastPairAt;
+  if (lastPairAt && since < config.repairCooldownMs) {
+    log.warn(
+      `re-pair asked for ${Math.round(since / 1000)}s after the last one; ` +
+        `ignoring until ${Math.round(config.repairCooldownMs / 1000)}s have passed`,
+    );
+    return;
+  }
+
+  repairing = true;
+  lastPairAt = Date.now();
+  try {
+    log.warn("re-pair requested from the CRM; clearing the saved session");
+    connected = false;
+    currentState = "connecting";
+    void reportSession({ state: "connecting", last_error: null });
+
+    // Bump the generation first so the old socket's `close` is ignored: it is
+    // about to fire, and it would otherwise schedule a reconnect on creds that
+    // no longer exist on disk.
+    generation += 1;
+    try {
+      socket?.end(undefined);
+    } catch {
+      // Already closed, or never opened. Either way there is nothing to close.
+    }
+    socket = null;
+
+    fs.rmSync(config.authDir, { recursive: true, force: true });
+    await connect();
+  } catch (error) {
+    log.error(`re-pair failed: ${error.message}`);
+    currentState = "disconnected";
+    void reportSession({ state: "disconnected", last_error: error.message });
+  } finally {
+    repairing = false;
+  }
+}
+
+/** Anything the owner has queued from the CRM since the last poll. */
+async function pollCommands() {
+  if (shuttingDown) return;
+  const { pair, syncGroups } = await fetchCommands();
+  if (pair) {
+    await startFreshPairing();
+    return; // connecting re-syncs the directory anyway
+  }
+  if (syncGroups) await syncDirectory({ force: true });
+}
+
+/**
+ * Normalise Baileys' group map into rows.
+ *
+ * Keyed by id rather than read off the value: a group's metadata can arrive
+ * before its subject has synced, and one nameless group used to take the whole
+ * listing down on sort — hiding every other id the owner came for.
+ */
+function groupRows(groups) {
+  return Object.entries(groups).map(([id, g]) => ({
     id: g?.id || id,
     name: g?.subject?.trim() || "(name not synced yet)",
     synced: Boolean(g?.subject?.trim()),
     participants: g?.participants?.length ?? 0,
   }));
+}
+
+async function printGroups(sock) {
+  const rows = groupRows(await sock.groupFetchAllParticipating());
   // Unnamed groups last: they are metadata that has not synced yet, and
   // burying them keeps the part the owner can actually recognise at the top.
   rows.sort((a, b) => {
@@ -338,8 +487,9 @@ async function printGroups(socket) {
   } else {
     console.log(
       `\nThis account is in ${rows.length} group(s). ` +
-        "Add the ones carrying inventory in the CRM (Owner -> Inventory feed).\n" +
-        "Narrow the list with a search word, e.g. `npm run groups -- property`:\n",
+        "You do not need to read these: the same list is in the CRM under " +
+        "Inventory feed, with names to tick.\n" +
+        "Narrow it with a search word, e.g. `npm run groups -- property`:\n",
     );
   }
 
@@ -356,26 +506,92 @@ async function printGroups(socket) {
 // Lifecycle
 // ---------------------------------------------------------------------------
 
+/**
+ * A port to answer on, for hosts that require one.
+ *
+ * Render, Fly and Railway all decide a process is dead if it never binds
+ * `$PORT`, and this gateway has to stay up for the CRM's Connect button to
+ * reach it. Deliberately says almost nothing: it is unauthenticated, so it must
+ * never expose the QR or the group list. Those are Owner-only, behind the API.
+ */
+function startHealthServer() {
+  if (!config.port) return;
+  http
+    .createServer((request, response) => {
+      const ok = request.url === "/" || request.url === "/health";
+      response.writeHead(ok ? 200 : 404, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify(
+          ok
+            ? {
+                state: currentState,
+                watching: watched.size,
+                uptime_seconds: Math.round(process.uptime()),
+              }
+            : { error: "not_found" },
+        ),
+      );
+    })
+    .listen(config.port, () => log.info(`health server on :${config.port}`));
+}
+
 async function main() {
   log.info(`gateway starting; API ${config.apiBase}`);
 
   if (!PAIR_ONLY && !LIST_GROUPS) {
+    startHealthServer();
+
     await refreshWatchedGroups();
     setInterval(refreshWatchedGroups, config.groupRefreshMs);
     setInterval(flushOutbox, config.flushIntervalMs);
+
+    // The owner's side of the pairing flow. Polled rather than pushed because
+    // this process has no public address -- it can sit on a laptop behind NAT
+    // and still be driven from a phone.
+    setInterval(() => void pollCommands(), config.commandPollMs);
 
     // Heartbeat, so the CRM can tell "connected" from "was connected when this
     // process died". Socket events alone cannot: a killed gateway sends no
     // "close", and the last thing the API heard would be "connected" forever.
     // Comfortably inside the API's 90s staleness window.
+    //
+    // Every state except `qr`, which is deliberate: a report of state "qr"
+    // carries no code, and the API treats that as "the QR is gone" -- so
+    // heartbeating one would blank the code the owner is mid-scan of. While a
+    // QR is up, WhatsApp's own 20s rotation is the heartbeat.
     setInterval(() => {
-      if (connected) {
-        void reportSession({ state: "connected", jid: currentJid });
-      }
+      if (currentState === "qr") return;
+      void reportSession({
+        state: currentState,
+        jid: connected ? currentJid : null,
+      });
     }, 30_000);
   }
 
-  await connect();
+  // A saved session connects straight through; without one this reports `qr`
+  // and waits, which is what the CRM's pairing screen renders.
+  if (PAIR_ONLY || LIST_GROUPS) {
+    await connect();
+    return;
+  }
+
+  // Long-running mode keeps trying. A first connect that throws -- no network
+  // yet on a booting machine, or WhatsApp refusing the version handshake -- used
+  // to end the process, and a dead process is one the owner cannot reach from
+  // the CRM at all. Socket-level drops are handled by `close` above; this is
+  // only about never getting off the ground.
+  for (;;) {
+    try {
+      await connect();
+      return;
+    } catch (error) {
+      log.error(`could not start the WhatsApp socket: ${error.message}`);
+      currentState = "disconnected";
+      void reportSession({ state: "disconnected", last_error: error.message });
+      await new Promise((resolve) => setTimeout(resolve, 15_000));
+      if (shuttingDown) return;
+    }
+  }
 }
 
 for (const signal of ["SIGINT", "SIGTERM"]) {

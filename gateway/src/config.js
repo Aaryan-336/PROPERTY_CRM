@@ -46,6 +46,23 @@ export const config = {
   // group in the UI takes effect without restarting the gateway.
   groupRefreshMs: Number(process.env.GROUP_REFRESH_MS || 60000),
 
+  // How often to check whether the owner has pressed something in the CRM
+  // ("Connect WhatsApp", "Refresh group list"). Short, because it sits behind a
+  // button press somebody is watching -- and cheap, because the endpoint is one
+  // row and answers with two booleans.
+  commandPollMs: Number(process.env.COMMAND_POLL_MS || 4000),
+
+  // Floor between two re-pairings. Clearing the session and relinking is the
+  // single most account-flagging thing this process can do, and the button that
+  // triggers it is one tap on a phone. A double tap must not become two
+  // relinks.
+  repairCooldownMs: Number(process.env.REPAIR_COOLDOWN_MS || 60000),
+
+  // Set by hosts that expect a process to answer HTTP (Render, Fly, Railway).
+  // Unset locally, where the gateway is just a long-running script and binding
+  // a port would be noise. See `startHealthServer`.
+  port: process.env.PORT ? Number(process.env.PORT) : null,
+
   // Retry backoff for a failing API, capped so a long outage does not push the
   // retry interval out to hours.
   retryBaseMs: Number(process.env.RETRY_BASE_MS || 2000),

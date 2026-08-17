@@ -32,6 +32,7 @@ from app.models import (
     Task,
     User,
     WhatsAppGroup,
+    WhatsAppGroupCandidate,
     WhatsAppMessage,
 )
 
@@ -68,6 +69,7 @@ GUARDED_MAPPERS = {
     Task,
     User,
     WhatsAppGroup,
+    WhatsAppGroupCandidate,
     WhatsAppMessage,
 }
 GUARDED_TABLE_NAMES = {m.__tablename__ for m in GUARDED_MAPPERS}

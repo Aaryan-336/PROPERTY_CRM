@@ -71,30 +71,72 @@ export async function reportSession(report) {
 }
 
 /**
+ * Signed GET. An empty body is still a signed body, so the same HMAC scheme
+ * covers reads; the endpoints refuse unsigned callers either way.
+ */
+async function get(path) {
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const response = await fetch(`${config.apiBase}${path}`, {
+    method: "GET",
+    headers: {
+      "x-balaji-signature": sign(Buffer.from(""), timestamp),
+      "x-balaji-timestamp": timestamp,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`${path} -> HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
  * Fetch the owner's watch list.
  *
  * The API is the single source of truth for which groups are monitored -- the
  * owner toggles a group in the CRM and the gateway picks it up on the next
  * refresh. Configuring the list in two places would guarantee they drift.
- *
- * Signed like the ingest call. A GET with an empty signed body is still an
- * authenticated request; the endpoint refuses unsigned callers.
  */
 export async function fetchWatchedGroups() {
-  const body = Buffer.from("");
-  const timestamp = String(Math.floor(Date.now() / 1000));
-  const response = await fetch(`${config.apiBase}/internal/whatsapp/groups`, {
-    method: "GET",
-    headers: {
-      "x-balaji-signature": sign(body, timestamp),
-      "x-balaji-timestamp": timestamp,
-    },
-  });
-  if (!response.ok) {
-    throw new Error(`group fetch -> HTTP ${response.status}`);
-  }
-  const data = await response.json();
+  const data = await get("/internal/whatsapp/groups");
   return data.groups || [];
+}
+
+/**
+ * Poll for work the owner has queued from the browser.
+ *
+ * The gateway is the only process that can produce a pairing QR, and it only
+ * produces one while it is asking WhatsApp to be linked. So "show me a QR" has
+ * to travel from the owner's screen to here, and this is the wire it travels
+ * on. Best-effort: the API being briefly unreachable must never stop the
+ * gateway reading and journalling messages.
+ */
+export async function fetchCommands() {
+  try {
+    const data = await get("/internal/whatsapp/commands");
+    return { pair: Boolean(data.pair), syncGroups: Boolean(data.sync_groups) };
+  } catch {
+    return { pair: false, syncGroups: false };
+  }
+}
+
+/**
+ * Upload every group the linked account is in.
+ *
+ * This is what removed `npm run groups` from the owner's life: they used to
+ * read `120363…@g.us` ids out of a terminal and paste them in one at a time.
+ * The gateway already has the list; sending it means the CRM can offer names
+ * and member counts to tick.
+ *
+ * Names only, no message content -- this is a directory, not a read of the
+ * groups. Nothing here implies a group is being ingested; that is still the
+ * owner's explicit choice in the CRM.
+ */
+export async function pushDirectory(groups) {
+  try {
+    return await post("/internal/whatsapp/directory", { groups });
+  } catch (error) {
+    return { failed: error.message };
+  }
 }
 
 /** Append-only journal. One JSON object per line, fsync'd by the OS. */

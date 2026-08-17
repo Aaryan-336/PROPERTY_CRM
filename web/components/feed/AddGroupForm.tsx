@@ -6,13 +6,16 @@ import { useState } from "react";
 import { Sheet } from "@/components/Sheet";
 
 /**
- * Add a WhatsApp group to the monitored set.
+ * Add a WhatsApp group by its id — the manual fallback.
  *
- * The group id is the awkward part of this flow: it is a machine identifier
- * (`120363…@g.us`) the owner has to copy out of the gateway's `npm run groups`
- * output. Rather than pretend otherwise, the form says exactly where to get it
- * and validates the shape before sending, so a paste error is caught here
- * instead of surfacing later as a group that silently never receives anything.
+ * This used to be the only way in, and it was rough: the owner had to copy a
+ * `120363…@g.us` identifier out of a terminal and paste it correctly, with a
+ * typo showing up much later as a group that looked configured and silently
+ * received nothing. The group picker on this screen is now the normal route.
+ *
+ * Kept because the picker depends on the gateway having uploaded its list, and
+ * a group somebody has the id for should not be un-addable just because that
+ * has not happened yet. Still validates the shape before sending.
  */
 export function AddGroupForm({
   open,
@@ -39,7 +42,7 @@ export function AddGroupForm({
     const trimmed = jid.trim();
     if (!trimmed.endsWith("@g.us")) {
       setError(
-        "That does not look like a group id — it should end in @g.us. Run `npm run groups` in the gateway to list them.",
+        "That does not look like a group id — it should end in @g.us. Easier: pick the group by name in “Groups on this account” above.",
       );
       return;
     }
@@ -86,9 +89,9 @@ export function AddGroupForm({
     >
       <div className="space-y-5">
         <div className="rounded-tile bg-parchment px-4 py-3 text-xs leading-relaxed text-slate">
-          In the gateway folder, run <code className="tabular">npm run groups</code>{" "}
-          to print every group the linked WhatsApp account is in, with its id.
-          Copy the id that ends in <code className="tabular">@g.us</code>.
+          Only needed if the group is not in the list on this screen — pick it by
+          name up there instead. Paste an id ending in{" "}
+          <code className="tabular">@g.us</code> to add one by hand.
         </div>
 
         <div>

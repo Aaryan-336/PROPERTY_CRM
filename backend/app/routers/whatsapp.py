@@ -42,10 +42,14 @@ from app.models import (
     Property,
     PropertySource,
     WhatsAppGroup,
+    WhatsAppGroupCandidate,
     WhatsAppMessage,
     WhatsAppSession,
 )
 from app.schemas import (
+    DirectoryReport,
+    GatewayCommands,
+    GroupCandidateOut,
     IngestionStatus,
     IngestRequest,
     IngestResponse,
@@ -681,6 +685,10 @@ def get_session(db: SessionDep, request: Request) -> SessionOut:
             select(func.count())
             .select_from(WhatsAppGroup)
             .where(WhatsAppGroup.is_active.is_(True))
+            .where(WhatsAppGroup.deleted_at.is_(None))
+        ).scalar_one()
+        known = db.execute(
+            select(func.count()).select_from(WhatsAppGroupCandidate)
         ).scalar_one()
 
     if session is None:
@@ -689,6 +697,7 @@ def get_session(db: SessionDep, request: Request) -> SessionOut:
             updated_at=now,
             stale=True,
             watched_groups=watched,
+            directory_count=known,
         )
 
     stale = (now - session.updated_at) > SESSION_STALE_AFTER
@@ -708,4 +717,276 @@ def get_session(db: SessionDep, request: Request) -> SessionOut:
         updated_at=session.updated_at,
         stale=stale,
         watched_groups=watched,
+        pair_pending=session.pair_requested_at is not None,
+        pair_requested_at=session.pair_requested_at,
+        directory_count=known,
+        directory_synced_at=session.directory_synced_at,
     )
+
+
+# ---------------------------------------------------------------------------
+# Pairing, driven from the browser
+# ---------------------------------------------------------------------------
+
+
+def _session_row(db: SessionDep) -> WhatsAppSession:
+    """The one session row, created if a fresh database has not seeded it.
+
+    Caller must already hold ``system_scope``.
+    """
+    session = db.get(WhatsAppSession, 1)
+    if session is None:
+        session = WhatsAppSession(id=1)
+        db.add(session)
+    return session
+
+
+@router.post(
+    "/whatsapp/pair",
+    response_model=SessionOut,
+    dependencies=[Depends(require("whatsapp.manage"))],
+)
+def request_pairing(db: SessionDep, request: Request) -> SessionOut:
+    """Ask the gateway to start a fresh pairing, so a QR appears.
+
+    This is the press behind the button. A QR is not something the API can
+    produce -- only the gateway's WhatsApp socket emits one, and only while it
+    is asking to be linked. Before this existed, a gateway holding a saved
+    session emitted nothing, so the pairing screen sat empty and the only way
+    to get a code was to delete the session directory by hand on the server.
+
+    Recorded rather than executed: the gateway polls, claims the request and
+    acts. It is also the gateway that enforces the cooldown between re-pairings,
+    because relinking an account over and over is exactly the pattern that gets
+    a number flagged.
+    """
+    now = datetime.now(timezone.utc)
+    with system_scope():
+        session = _session_row(db)
+        session.pair_requested_at = now
+        # A failure from the last attempt would otherwise sit under the new QR
+        # as if it had just happened.
+        session.last_error = None
+        db.commit()
+
+    request.state.audit.add(pair_requested=True)
+    return get_session(db, request)
+
+
+@router.post(
+    "/whatsapp/sync-groups",
+    response_model=SessionOut,
+    dependencies=[Depends(require("whatsapp.manage"))],
+)
+def request_group_sync(db: SessionDep, request: Request) -> SessionOut:
+    """Ask the gateway to re-read the group list off WhatsApp.
+
+    The gateway uploads it on every connect, so this is for the case the owner
+    notices first: a group they were just added to is not in the picker yet.
+    """
+    now = datetime.now(timezone.utc)
+    with system_scope():
+        session = _session_row(db)
+        session.sync_requested_at = now
+        db.commit()
+
+    request.state.audit.add(group_sync_requested=True)
+    return get_session(db, request)
+
+
+@router.get(
+    "/internal/whatsapp/commands",
+    response_model=GatewayCommands,
+    tags=["internal"],
+    summary="Work queued for the gateway (HMAC-authenticated)",
+)
+async def gateway_commands(
+    request: Request,
+    db: SessionDep,
+    x_balaji_signature: str | None = Header(default=None),
+    x_balaji_timestamp: str | None = Header(default=None),
+) -> GatewayCommands:
+    """Hand over any queued commands, clearing them in the same transaction.
+
+    The gateway polls this every few seconds, which is why it does as little as
+    possible: one row, one UPDATE, and only when something is actually pending.
+
+    Claim-on-read is deliberate. Leaving the request set until the gateway
+    confirms success would mean a gateway that restarts mid-pairing wipes its
+    WhatsApp session again on boot, and again after that -- a re-pair loop
+    against WhatsApp's servers. Losing a command costs one more press.
+    """
+    verify_gateway_signature(
+        await request.body(), x_balaji_signature, x_balaji_timestamp
+    )
+
+    with system_scope():
+        session = db.get(WhatsAppSession, 1)
+        if session is None:
+            return GatewayCommands()
+        commands = GatewayCommands(
+            pair=session.pair_requested_at is not None,
+            sync_groups=session.sync_requested_at is not None,
+        )
+        if commands.pair or commands.sync_groups:
+            session.pair_requested_at = None
+            session.sync_requested_at = None
+            db.commit()
+
+    return commands
+
+
+@router.post(
+    "/internal/whatsapp/directory",
+    tags=["internal"],
+    summary="Gateway uploads every group the account is in (HMAC-authenticated)",
+)
+async def report_directory(request: Request, db: SessionDep) -> dict:
+    """Cache the group list so the owner picks names instead of pasting ids.
+
+    Upsert, never wholesale replace: the ``whatsapp_groups`` rows that decide
+    what is actually read are keyed on the same jid, and a sync that arrives
+    mid-reconnect with a partial list must not empty the picker. Rows for groups
+    the account has left simply stop being touched, and the UI ages them out.
+    """
+    body = await request.body()
+    verify_gateway_signature(
+        body,
+        request.headers.get("x-balaji-signature"),
+        request.headers.get("x-balaji-timestamp"),
+    )
+    payload = DirectoryReport.model_validate_json(body)
+
+    now = datetime.now(timezone.utc)
+    with system_scope():
+        incoming = {}
+        for group in payload.groups:
+            jid = group.group_jid.strip()
+            # Only groups. A direct chat arriving here would be a gateway bug,
+            # and it must never become something the owner can tick and read.
+            if jid.endswith("@g.us"):
+                incoming[jid] = group
+
+        existing = {
+            row.group_jid: row
+            for row in db.execute(
+                select(WhatsAppGroupCandidate).where(
+                    WhatsAppGroupCandidate.group_jid.in_(list(incoming))
+                )
+            )
+            .scalars()
+            .all()
+        }
+
+        added = 0
+        for jid, group in incoming.items():
+            name = (group.name or "").strip()
+            row = existing.get(jid)
+            if row is None:
+                db.add(
+                    WhatsAppGroupCandidate(
+                        group_jid=jid,
+                        name=name,
+                        participants=group.participants,
+                        last_seen_at=now,
+                    )
+                )
+                added += 1
+                continue
+            # A later sync with no subject yet must not blank a name the owner
+            # is already recognising the group by.
+            if name:
+                row.name = name
+            row.participants = group.participants
+            row.last_seen_at = now
+
+        session = _session_row(db)
+        session.directory_synced_at = now
+        db.commit()
+
+    return {"ok": True, "known": len(incoming), "added": added}
+
+
+@router.get(
+    "/whatsapp/available-groups",
+    response_model=list[GroupCandidateOut],
+    dependencies=[Depends(require("whatsapp.manage"))],
+)
+def available_groups(
+    db: SessionDep,
+    q: str | None = Query(default=None, max_length=80),
+    watched_only: bool = False,
+) -> list[GroupCandidateOut]:
+    """Every group the linked account is in, flagged with whether it is watched.
+
+    This is what replaced transcribing ``120363…@g.us`` ids out of a terminal.
+    A working brokerage account sits in hundreds of groups, so the list is
+    searchable and the watched ones are pinned to the top -- the two things the
+    owner is ever doing here is finding one group by name, and checking what is
+    already on.
+    """
+    with system_scope():
+        stmt = select(WhatsAppGroupCandidate)
+        if q:
+            needle = f"%{q.strip().lower()}%"
+            stmt = stmt.where(func.lower(WhatsAppGroupCandidate.name).like(needle))
+        candidates = db.execute(stmt).scalars().all()
+
+        # Every watched group, including ones no longer in the account's list:
+        # a group the account has left is still being read from as far as the
+        # ingest webhook is concerned, and the owner needs to see that to
+        # switch it off.
+        watched = {
+            row.group_jid: row
+            for row in db.execute(
+                select(WhatsAppGroup).where(WhatsAppGroup.deleted_at.is_(None))
+            )
+            .scalars()
+            .all()
+        }
+
+    seen = set()
+    out: list[GroupCandidateOut] = []
+    for row in candidates:
+        group = watched.get(row.group_jid)
+        seen.add(row.group_jid)
+        out.append(
+            GroupCandidateOut(
+                group_jid=row.group_jid,
+                name=row.name or "",
+                participants=row.participants,
+                last_seen_at=row.last_seen_at,
+                watched=group is not None,
+                group_id=group.id if group else None,
+                is_active=group.is_active if group else None,
+            )
+        )
+
+    # Watched groups the directory has never heard of -- added by hand before
+    # this screen existed, or in a group the account has since left. Dropping
+    # them would hide something that is actively being read.
+    for jid, group in watched.items():
+        if jid in seen:
+            continue
+        if q and q.strip().lower() not in (group.name or "").lower():
+            continue
+        out.append(
+            GroupCandidateOut(
+                group_jid=jid,
+                name=group.name,
+                participants=0,
+                last_seen_at=group.created_at,
+                watched=True,
+                group_id=group.id,
+                is_active=group.is_active,
+            )
+        )
+
+    if watched_only:
+        out = [row for row in out if row.watched]
+
+    # Watched first, then by name. An unnamed group sorts last within its half:
+    # its metadata has not synced yet and there is nothing for the owner to
+    # recognise it by.
+    out.sort(key=lambda r: (not r.watched, not r.name, r.name.lower()))
+    return out

@@ -434,4 +434,27 @@ export type WhatsAppSession = {
   /** The gateway has not reported recently enough to be believed. */
   stale: boolean;
   watched_groups: number;
+  /** Connect has been pressed and the gateway has not picked it up yet. */
+  pair_pending: boolean;
+  pair_requested_at: string | null;
+  /** How many groups the linked account is in, as last read off WhatsApp. */
+  directory_count: number;
+  directory_synced_at: string | null;
+};
+
+/**
+ * One row in the group picker: a group the linked account belongs to, and
+ * whether the firm is reading it.
+ *
+ * `watched` and `group_id` are separate on purpose — an unwatched group has no
+ * row in whatsapp_groups yet, so there is no id to switch off.
+ */
+export type WhatsAppGroupCandidate = {
+  group_jid: string;
+  name: string;
+  participants: number;
+  last_seen_at: string;
+  watched: boolean;
+  group_id: number | null;
+  is_active: boolean | null;
 };

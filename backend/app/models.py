@@ -286,6 +286,53 @@ class WhatsAppSession(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
+    # Commands, owner's screen -> gateway. The gateway polls, acts, and clears
+    # them by reporting. Timestamps rather than flags because "asked for 40
+    # seconds ago" is what the UI needs to show while it waits, and a flag only
+    # says "yes".
+    pair_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    sync_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    directory_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+
+
+class WhatsAppGroupCandidate(Base):
+    """Every group the linked account is in — the picker's source list.
+
+    Not a decision, a cache: a row here means WhatsApp told the gateway this
+    group exists. Watching it is still a ``WhatsAppGroup`` row, which is what
+    the ingest webhook checks and what the audit log records. Keeping the two
+    apart is what stops "we can see this group" from ever meaning "we are
+    reading this group".
+
+    Guarded in ``app/db.py`` for the same reason as the rest of the WhatsApp
+    tables: the list of groups a brokerage sits in is commercially revealing,
+    and it is Owner-only under ``whatsapp.manage``.
+    """
+
+    __tablename__ = "whatsapp_group_candidates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    group_jid: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    # Empty rather than null when metadata has not synced yet. A group whose
+    # subject has not arrived is still worth listing — WhatsApp sends it moments
+    # later, and one nameless group must not hide the rest.
+    name: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    participants: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0"
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
 
 class ContactAssignment(Base):
     """An extra staff member working a lead, beyond its owner.

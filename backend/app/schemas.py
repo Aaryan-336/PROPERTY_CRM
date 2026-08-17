@@ -78,6 +78,56 @@ class SessionOut(BaseModel):
     # A crashed gateway leaves state="connected" behind forever otherwise.
     stale: bool
     watched_groups: int
+    # The owner has pressed Connect and the gateway has not picked it up yet.
+    # Without this the screen would look identical before and after the press.
+    pair_pending: bool = False
+    pair_requested_at: datetime | None = None
+    # How many groups the linked account is in, and when that was last read off
+    # WhatsApp. Zero with a live connection means the list has not synced yet,
+    # which is a different problem from being in no groups.
+    directory_count: int = 0
+    directory_synced_at: datetime | None = None
+
+
+class GatewayCommands(BaseModel):
+    """Work the gateway should do, handed over once and then cleared.
+
+    Claim-on-read: the API clears the request as it answers. A gateway that
+    dies between the two loses the command, and the owner presses again — which
+    is the right failure, because the alternative is a gateway that wipes its
+    WhatsApp session every time it restarts.
+    """
+
+    pair: bool = False
+    sync_groups: bool = False
+
+
+class DirectoryGroup(BaseModel):
+    """One group the linked account belongs to, as the gateway sees it."""
+
+    group_jid: str
+    name: str = ""
+    participants: int = Field(default=0, ge=0)
+
+
+class DirectoryReport(BaseModel):
+    """The gateway's full group list, replacing whatever was cached."""
+
+    groups: list[DirectoryGroup] = Field(default_factory=list, max_length=2000)
+
+
+class GroupCandidateOut(BaseModel):
+    """A row in the owner's group picker."""
+
+    group_jid: str
+    name: str
+    participants: int
+    last_seen_at: datetime
+    # Whether this group is already being read, and under which row — the id is
+    # what "stop reading this" needs, so the UI does not have to look it up.
+    watched: bool = False
+    group_id: int | None = None
+    is_active: bool | None = None
 
 
 class Assignee(BaseModel):

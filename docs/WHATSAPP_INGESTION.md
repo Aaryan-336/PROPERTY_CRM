@@ -124,13 +124,16 @@ the listing *type* is never rewritten.
 #    backend/.env → WHATSAPP_INGEST_SECRET, GROQ_API_KEY
 cd backend && ./.venv/bin/alembic upgrade head
 
-# 2. Gateway (separate box in production)
+# 2. Gateway (separate box in production) — must stay running
 cd gateway && npm install && cp .env.example .env   # same secret
-npm run pair        # QR-pair the dedicated WhatsApp account
-npm run groups      # list group ids
 npm start
 
-# 3. Add the groups in the CRM: Owner → Inventory feed → Add group
+# 3. Everything else is in the CRM: Owner → Inventory feed
+#    - "Connect WhatsApp" → a QR appears on screen → scan it with the phone
+#    - the groups the account is in then list themselves; tap the ones to read
+#
+#    npm run pair / npm run groups still exist and do the same job from a
+#    terminal. They are for diagnosing a broken deployment, not for the owner.
 
 # 4. Extraction worker
 cd backend && ./.venv/bin/python -m app.workers.whatsapp
@@ -138,6 +141,45 @@ cd backend && ./.venv/bin/python -m app.workers.whatsapp
 #    Useful while tuning the prompt — extracts and prints, writes nothing:
 ./.venv/bin/python -m app.workers.whatsapp --dry-run
 ```
+
+### Pairing from the browser
+
+The owner holds the phone; the gateway holds the terminal. So the QR travels
+between them through the API:
+
+```
+owner taps Connect
+  → POST /whatsapp/pair            records pair_requested_at
+  → gateway polls /internal/whatsapp/commands   (every ~4s, HMAC-signed)
+  → claims the command, which clears it        (claim-on-read)
+  → clears .wa-session, opens a fresh socket
+  → WhatsApp emits a QR, rotating every ~20s
+  → POST /internal/whatsapp/session            with the payload + a 20s TTL
+  → the owner's screen polls /whatsapp/session and renders it client-side
+```
+
+On connect the gateway also uploads every group the account is in
+(`POST /internal/whatsapp/directory`), which is what the picker lists. That
+table is a **cache, not a decision**: a row there means the group exists, and
+nothing is read until the owner taps it and creates a `whatsapp_groups` row —
+the only table the ingest webhook checks.
+
+Two deliberate choices, both about not getting the number banned:
+
+- **Claim-on-read.** A command left set until the gateway confirmed success
+  would mean a gateway restarting mid-pairing wipes its session again on every
+  boot — a re-pair loop against WhatsApp's servers. Losing a command costs one
+  more press.
+- **A cooldown in the gateway** (`REPAIR_COOLDOWN_MS`, 60s). Connect is one tap
+  on a phone; a double tap must not become two relinks.
+
+**The gateway has to be running for any of this to work.** It is the only
+process that can produce a QR, and it holds the socket — so it needs somewhere
+always-on: a paid Render worker, a small VPS, or a machine at the office that
+stays on. A free-tier web service that sleeps after 15 idle minutes will drop
+the WhatsApp session every time it does. Set `PORT` when the host requires a
+listening process; the gateway then answers `/health` with its connection state
+and nothing else.
 
 **Two silent failure modes**, both surfaced explicitly on the Inventory feed
 screen rather than left to be inferred from an inventory list that stopped
