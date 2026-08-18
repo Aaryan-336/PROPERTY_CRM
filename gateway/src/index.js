@@ -309,12 +309,36 @@ async function connect() {
     if (connection === "close") {
       const status = lastDisconnect?.error?.output?.statusCode;
       const loggedOut = status === DisconnectReason.loggedOut;
+      // 515 is what WhatsApp sends immediately after a successful scan: the
+      // pairing is done, and it wants the socket restarted with the credentials
+      // it just issued. It is the last step of pairing, not a failure -- and
+      // reporting it as one put "Stream Errored" and a Connect button in front
+      // of an owner whose scan had just worked.
+      const restartRequired = status === DisconnectReason.restartRequired;
       connected = false;
-      currentState = loggedOut ? "logged_out" : "disconnected";
+      currentState = loggedOut
+        ? "logged_out"
+        : restartRequired
+          ? "connecting"
+          : "disconnected";
       void reportSession({
         state: currentState,
-        last_error: lastDisconnect?.error?.message ?? null,
+        // Nothing went wrong on a restart, so nothing is shown. Passing the
+        // library's "Stream Errored (restart required)" through would be
+        // technically true and read as a broken pairing.
+        last_error: restartRequired
+          ? null
+          : (lastDisconnect?.error?.message ?? null),
       });
+
+      if (restartRequired && !shuttingDown) {
+        // Straight away. Baileys expects the restart to be immediate, and every
+        // second of delay is a second the owner spends looking at a screen that
+        // does not yet say "linked" after a scan that worked.
+        log.info("pairing accepted; restarting the socket");
+        if (mine === generation) void connect();
+        return;
+      }
 
       if (loggedOut) {
         // The device was removed from the phone. Reconnecting with revoked

@@ -266,7 +266,15 @@ function Status({ session }: { session: WhatsAppSession }) {
     case "logged_out":
       return <StatusPill label="Device unlinked" tone="signal" />;
     default:
-      return <StatusPill label="Gateway offline" tone="neutral" />;
+      // "disconnected" covers two different worlds. If the gateway is
+      // heartbeating, it is up and simply has no WhatsApp session -- calling
+      // that "offline" sent owners hunting for a process that was already
+      // running, seconds after a scan that had worked.
+      return session.stale ? (
+        <StatusPill label="Gateway offline" tone="neutral" />
+      ) : (
+        <StatusPill label="Not linked" tone="neutral" />
+      );
   }
 }
 
@@ -326,6 +334,34 @@ function Waiting({
         {session.last_error && (
           <p className="mt-2 text-[11px] text-signal">{session.last_error}</p>
         )}
+      </div>
+    );
+  }
+
+  // WhatsApp drops the socket immediately after a successful scan and expects a
+  // restart with the credentials it just issued. For those few seconds the
+  // session is neither linked nor idle, and the old screen said "No account
+  // linked yet" with a Connect button -- telling the owner their scan had
+  // failed at the moment it succeeded.
+  if (session.state === "connecting") {
+    return (
+      <div
+        className="rounded-tile border border-hairline bg-parchment-deep px-4 py-4"
+        role="status"
+        aria-live="polite"
+      >
+        <div className="flex items-start gap-3">
+          <Spinner />
+          <div>
+            <p className="text-sm font-semibold text-ink">
+              Finishing the connection…
+            </p>
+            <p className="mt-1.5 text-xs leading-relaxed text-slate">
+              WhatsApp restarts the link right after a scan. This takes a few
+              seconds and completes on its own — nothing to do.
+            </p>
+          </div>
+        </div>
       </div>
     );
   }
