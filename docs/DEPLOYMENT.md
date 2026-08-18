@@ -271,6 +271,24 @@ of groups fills itself in once the account is linked.
 (`npm run pair` and `npm run groups` still do the same jobs from a terminal.
 They are for diagnosing a broken deployment, not for the owner.)
 
+### Keeping it running
+
+The gateway holds the WhatsApp socket, and messages posted while it is down are
+missed outright — it reads live traffic, never history. Started by hand in a
+terminal it dies with that terminal, and the CRM then reports "gateway not
+responding" with nothing to suggest that a window was closed hours ago.
+
+On the office Mac, register it so it starts at login and restarts if it stops:
+
+```bash
+cd gateway && ./install-autostart.sh      # --uninstall to undo
+tail -f gateway/gateway.log               # what it is doing
+```
+
+That covers the machine being rebooted or the terminal being closed. It does not
+cover the machine being asleep or off, which is the argument for a small
+always-on box rather than somebody's laptop.
+
 ### No QR on the deployed site?
 
 Three things have to line up, and all three look identical on screen — "the
