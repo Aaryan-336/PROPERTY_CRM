@@ -244,12 +244,41 @@ API_BASE_URL=https://balaji-api.onrender.com
 ```
 
 ```bash
-npm run pair      # QR-pair a dedicated number
-npm run groups    # list group ids
 npm start
 ```
 
-Then add the groups in the CRM under **Owner → Inventory feed**.
+Then, in the CRM under **Owner → Inventory feed**: press **Connect WhatsApp**,
+scan the code that appears, and tick the groups that carry inventory. The list
+of groups fills itself in once the account is linked.
+
+(`npm run pair` and `npm run groups` still do the same jobs from a terminal.
+They are for diagnosing a broken deployment, not for the owner.)
+
+### No QR on the deployed site?
+
+Three things have to line up, and all three look identical on screen — "the
+gateway is not running", no code. Run:
+
+```bash
+cd gateway && ./check-deployment.sh https://your-api.onrender.com
+```
+
+It names which one it is. In order of how often they are the culprit:
+
+1. **`API_BASE_URL` still points at `127.0.0.1`.** The gateway is then handing
+   its QR to a CRM running on that laptop, not to the deployed one. This is the
+   default in `.env.example`, so it is the easiest one to leave behind.
+2. **`WHATSAPP_INGEST_SECRET` is not set on Render**, or differs from the
+   gateway's. Unset, the API refuses every gateway request with 503
+   `ingest_disabled`; different, with 403. Either way no QR arrives.
+3. **Render is running an older build.** `/whatsapp/pair` answers 404. Deploy
+   the latest commit — the start command runs `alembic upgrade head`, which adds
+   the columns the Connect button writes to.
+
+And the one that is not a misconfiguration: **the QR is produced by the gateway,
+not by the website.** If `npm start` is not running somewhere, no amount of
+pressing Connect will produce a code — the press is recorded and waits, and the
+screen says so.
 
 **If you do want it on Render:** add a `worker` service with `rootDir: gateway`,
 `startCommand: node src/index.js`, and a **disk mounted at
