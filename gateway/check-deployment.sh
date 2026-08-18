@@ -89,6 +89,33 @@ else
 fi
 
 echo
+# ---------------------------------------------------------------------------
+echo
+echo "5. Does this gateway's secret match the deployment's?"
+# Signs a read-only request the way the gateway does and sees whether the API
+# accepts it. Asking for the watch list consumes and changes nothing, and the
+# secret never leaves this machine -- only a signature derived from it does,
+# which is the whole point of signing rather than sending.
+secret=$(grep -E "^WHATSAPP_INGEST_SECRET=" "$here/.env" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'")
+if [ -z "$secret" ]; then
+  echo "   WHATSAPP_INGEST_SECRET is not set in $here/.env."
+else
+  ts=$(date +%s)
+  sig=$(printf '%s.' "$ts" | openssl dgst -sha256 -hmac "$secret" -hex 2>/dev/null | sed 's/.*= //')
+  signed=$(code -H "x-balaji-signature: $sig" -H "x-balaji-timestamp: $ts" "$API/internal/whatsapp/groups")
+  case "$signed" in
+    200) echo "   OK - accepted. The secrets match." ;;
+    403) echo "   PROBLEM - refused (403). This gateway's secret is NOT the one the"
+         echo "   deployment expects, so every report it sends is discarded and no"
+         echo "   QR can arrive."
+         echo "   Fix: Render -> your API service -> Environment -> copy"
+         echo "        WHATSAPP_INGEST_SECRET, and paste it into $here/.env" ;;
+    503) echo "   PROBLEM - the deployment has no secret configured (see step 3)." ;;
+    *)   echo "   UNEXPECTED - $signed." ;;
+  esac
+fi
+
+echo ""
 echo "Reminder: the QR is produced by the gateway, not by the website. Whatever"
 echo "the checks above say, 'npm start' has to be running somewhere for a code"
 echo "to appear — and the secret in gateway/.env must match the one on Render."
