@@ -13,6 +13,7 @@ import types
 
 import pytest
 
+from app.config import settings
 from app.extraction import (
     ExtractionBatch,
     ExtractionInput,
@@ -207,7 +208,13 @@ def test_unparseable_output_raises():
 def test_no_credentials_reports_unavailable_instead_of_crashing(monkeypatch):
     """The worker checks this on startup so it says "not configured" once,
     rather than burning the backlog marking every message failed."""
+    # Both sources, because there are two: the process environment (how a host
+    # like Render supplies it) and settings, loaded from backend/.env (how a
+    # developer does). Clearing only the environment used to pass while a real
+    # key sat in .env, which is the mirror image of the bug this now guards --
+    # a key in .env that the extractor could not see.
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.setattr(settings, "groq_api_key", "")
     extractor = Extractor()
     assert extractor.available is False
     with pytest.raises(ExtractionUnavailable, match="GROQ_API_KEY"):
@@ -218,3 +225,55 @@ def test_an_empty_batch_costs_nothing():
     client = FakeGroq()
     assert _extractor(client).extract([]) == []
     assert client.calls == []
+
+
+def test_a_key_in_dotenv_is_actually_used(monkeypatch):
+    """The bug that silently stopped the whole WhatsApp feed.
+
+    config.py calls backend/.env "the single place to configure the backend",
+    and pydantic loads it into settings -- but nothing exports those lines into
+    the process environment, so os.getenv never saw them. A correctly
+    configured GROQ_API_KEY produced an extractor that reported itself
+    unconfigured: messages arrived, piled up as `pending`, and the Inventory
+    feed showed a healthy connection and no listings, with nothing anywhere
+    saying why.
+    """
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.setattr(settings, "groq_api_key", "gsk_from_dotenv")
+
+    assert Extractor()._api_key == "gsk_from_dotenv"
+
+
+def test_the_environment_still_wins_where_there_is_no_dotenv(monkeypatch):
+    """Hosts like Render set real environment variables and ship no .env."""
+    monkeypatch.setattr(settings, "groq_api_key", "")
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_from_environment")
+
+    assert Extractor()._api_key == "gsk_from_environment"
+
+
+def test_an_oversized_batch_is_split_rather_than_failed(monkeypatch):
+    """Groq counts reserved completion tokens against the per-minute allowance,
+    so a whole batch can exceed a free account's budget. Waiting does not help
+    -- the batch is the same size next minute -- so it is halved instead. Before
+    this, every batch failed identically and for ever."""
+    from app.extraction import _is_too_large
+
+    class TooLarge(Exception):
+        status_code = 413
+        def __str__(self):
+            return (
+                "Request too large for model X on tokens per minute (TPM): "
+                "Limit 8000, Requested 17759, please reduce your message size"
+            )
+
+    class OrdinaryRateLimit(Exception):
+        status_code = 429
+        def __str__(self):
+            return "Rate limit reached for requests per minute"
+
+    assert _is_too_large(TooLarge()) is True
+    # A plain rate limit is a wait, not a split: halving would double the number
+    # of requests against the very limit being hit.
+    assert _is_too_large(OrdinaryRateLimit()) is False
+    assert _is_too_large(RuntimeError("something else")) is False

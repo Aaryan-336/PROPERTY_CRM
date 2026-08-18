@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import logging
+import threading
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -11,6 +14,9 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.audit import AuditMiddleware
 from app.config import settings
 from app.db import UnscopedQueryError
+from app.extraction import Extractor
+from app.ingestion import BATCH_SIZE
+from app.workers.whatsapp import request_worker_shutdown, run_forever
 from app.routers import (
     activities,
     audit,
@@ -28,7 +34,55 @@ from app.routers import (
 
 logging.basicConfig(level=logging.INFO)
 
+log = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """Optionally carry the extraction worker inside this process.
+
+    Extraction belongs in its own service and normally lives there. But Render
+    has no Background Workers on the free plan, so on that deployment the worker
+    has nowhere to run: messages arrive from the gateway, sit as `pending`, and
+    the feed reports a healthy connection producing no inventory at all. This
+    makes a one-service deployment able to finish the job.
+
+    A daemon thread, so shutdown never waits on an in-flight extraction, and the
+    loop is the same one the standalone worker runs -- there is no second
+    implementation to drift.
+    """
+    thread: threading.Thread | None = None
+
+    if settings.extraction_in_api:
+        extractor = Extractor()
+        if not extractor.available:
+            # Saying so once at boot beats an empty inventory that gives no
+            # reason. The API is fine without it; the feed is not.
+            log.warning(
+                "extraction_in_api is on but no GROQ_API_KEY is set — "
+                "messages will be stored and never turned into listings."
+            )
+        else:
+            thread = threading.Thread(
+                target=run_forever,
+                args=(extractor, BATCH_SIZE),
+                name="extraction-worker",
+                daemon=True,
+            )
+            thread.start()
+            log.info("extraction worker started inside the API process")
+
+    yield
+
+    if thread is not None:
+        # Signals the shared loop to stop at its next batch boundary. Not
+        # joined: it is a daemon, and a batch mid-flight is safe to abandon
+        # because claim_pending's rows return to `pending` on the next pass.
+        request_worker_shutdown()
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="Balaji CRM API",
     version="1.0.0-phase1",
     description=(

@@ -47,6 +47,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.config import settings
+
 log = logging.getLogger("balaji.extraction")
 
 # Coarse labels rather than a 0-1 number: models are far better calibrated
@@ -268,7 +270,7 @@ class ExtractionUnavailable(RuntimeError):
 # structured copying out of messy text, which does not need a frontier model,
 # and Groq's speed is what makes a per-message batch cheap enough to run
 # continuously.
-DEFAULT_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_MODEL = "openai/gpt-oss-120b"
 
 
 def _strict_schema(schema: dict) -> dict:
@@ -310,12 +312,31 @@ class Extractor:
         model: str | None = None,
         api_key: str | None = None,
     ) -> None:
-        self.model = model or os.getenv("EXTRACTION_MODEL", DEFAULT_MODEL)
-        self._api_key = api_key or os.getenv("GROQ_API_KEY")
+        # Read through `settings`, not straight off the environment.
+        #
+        # config.py calls `.env` "the single place to configure the backend",
+        # and pydantic loads it into settings -- but os.getenv never sees it,
+        # because nothing exports those lines into the process environment. So a
+        # GROQ_API_KEY sitting correctly in backend/.env produced an extractor
+        # that reported itself unconfigured, messages that piled up as
+        # `pending`, and an Inventory feed showing a healthy connection and no
+        # listings. Nothing in the product could say why.
+        #
+        # os.getenv stays as the fallback: on a host like Render these are real
+        # environment variables and there is no .env file at all.
+        self.model = (
+            model or settings.extraction_model or os.getenv("EXTRACTION_MODEL")
+            or DEFAULT_MODEL
+        )
+        self._api_key = api_key or settings.groq_api_key or os.getenv("GROQ_API_KEY")
         self._client = None
         # Whether this model accepts a strict json_schema. Assumed yes and
         # downgraded permanently on the first rejection -- see extract().
-        self._schema_mode = os.getenv("EXTRACTION_SCHEMA_MODE", "auto")
+        self._schema_mode = (
+            settings.extraction_schema_mode
+            or os.getenv("EXTRACTION_SCHEMA_MODE")
+            or "auto"
+        )
 
     @property
     def available(self) -> bool:
@@ -370,6 +391,27 @@ class Extractor:
         try:
             response = self._call(client, items)
         except Exception as exc:
+            # The batch does not fit the account's per-minute token allowance.
+            #
+            # Groq counts reserved completion tokens against TPM, so the ceiling
+            # applies to the whole request, not to what comes back. A free
+            # account gets 8000 a minute -- less than a full batch -- so every
+            # batch failed identically and for ever, which from the product
+            # looked like a feed that connected fine and produced nothing.
+            #
+            # Halving and retrying adapts to whatever tier the account is on,
+            # instead of hard-coding the smallest one and making paid accounts
+            # pay for the system prompt many times over.
+            if _is_too_large(exc) and len(items) > 1:
+                half = len(items) // 2
+                log.warning(
+                    "batch of %d exceeds the token allowance; splitting into %d and %d",
+                    len(items),
+                    half,
+                    len(items) - half,
+                )
+                return self.extract(items[:half]) + self.extract(items[half:])
+
             # Model does not do strict schemas. Groq reports this as a 400
             # rather than by advertising capability, so the only way to know is
             # to be told. Downgrade once, for the life of the process, instead
@@ -437,8 +479,32 @@ class Extractor:
             # from sampling variety, and reruns of the same backlog should
             # agree with each other.
             temperature=0,
-            max_tokens=16000,
+            # Sized to the batch, not a flat ceiling.
+            #
+            # Groq bills reserved completion tokens against the tokens-per-minute
+            # allowance, so a fixed 16000 made a one-message batch cost ~17.7k
+            # tokens and get a 413 on a free account whose whole budget is 8000
+            # a minute. Every extraction failed, messages piled up as `pending`,
+            # and the feed showed a healthy connection producing no listings.
+            #
+            # A message rarely yields more than one listing and a listing is a
+            # few hundred tokens of JSON; 700 each plus headroom for the
+            # envelope covers a dense post with several flats in it.
+            max_tokens=min(16000, 700 * len(items) + 600),
         )
+
+
+def _is_too_large(exc: Exception) -> bool:
+    """True when the request exceeded the account's token allowance.
+
+    Distinct from an ordinary rate limit: waiting does not help, because the
+    same batch will be exactly as big next minute. Splitting is what helps.
+    """
+    status = getattr(exc, "status_code", None)
+    if status not in (413, 429):
+        return False
+    text = str(exc).lower()
+    return "too large" in text or "reduce your message size" in text
 
 
 def _is_schema_rejection(exc: Exception) -> bool:

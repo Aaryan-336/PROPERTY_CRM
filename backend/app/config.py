@@ -63,10 +63,27 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     # Groq retires model names on a fairly short cycle, so treat this as a
     # setting to check when extraction starts 404ing, not a constant.
-    extraction_model: str = "llama-3.3-70b-versatile"
+    extraction_model: str = "openai/gpt-oss-120b"
     # auto | json_schema | json_object. "auto" asks for a strict schema and
     # downgrades itself if the model will not honour one.
     extraction_schema_mode: str = "auto"
+
+    # Run the extraction loop inside the API process instead of as its own
+    # service.
+    #
+    # Extraction is a separate worker by design -- it is slow, it talks to a
+    # third party, and it should not be able to stall a request. But Render does
+    # not offer Background Workers on the free plan, so on that deployment there
+    # is nowhere for the worker to live, and messages arrive and sit as
+    # `pending` for ever: the feed looks connected and produces no inventory.
+    #
+    # Safe to run alongside a real worker. `claim_pending` takes its batch with
+    # SELECT ... FOR UPDATE SKIP LOCKED, so two extractors divide the queue
+    # rather than duplicating it.
+    #
+    # Off by default: a firm on a paid plan should run the worker properly,
+    # where it can be restarted and scaled without bouncing the API.
+    extraction_in_api: bool = False
 
     @property
     def sqlalchemy_url(self) -> str:

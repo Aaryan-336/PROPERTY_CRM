@@ -59,6 +59,17 @@ def _handle_signal(signum: int, _frame: FrameType | None) -> None:
     log.info("received signal %s, finishing current batch then exiting", signum)
 
 
+def request_worker_shutdown() -> None:
+    """Ask the loop to stop at its next batch boundary.
+
+    The signal handlers cannot be used when the loop runs inside the API: those
+    belong to uvicorn, and a worker thread cannot install its own. This is the
+    same flag by another door.
+    """
+    global _shutdown
+    _shutdown = True
+
+
 def run_forever(extractor: Extractor, batch_size: int) -> None:
     totals = IngestionStats()
     while not _shutdown:

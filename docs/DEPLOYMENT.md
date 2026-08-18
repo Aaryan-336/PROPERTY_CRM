@@ -87,8 +87,25 @@ and does not count against the database's external connection limit.
 
 **The extraction worker** is *New → Background Worker*, same repo, same root
 directory and build command, with `python -m app.workers.whatsapp` as the start
-command and the same `DATABASE_URL` / `GROQ_API_KEY`. Background Workers
-are not offered on the free plan.
+command and the same `DATABASE_URL` / `GROQ_API_KEY`.
+
+**Background Workers are not offered on the free plan**, and without one nothing
+turns messages into listings: the gateway delivers, the rows sit as `pending`,
+and the Inventory feed shows a healthy connection producing no inventory. On the
+free plan, set `EXTRACTION_IN_API=true` on the API service instead and the
+extraction loop runs inside it. It is the same loop, claiming work with
+`SELECT ... FOR UPDATE SKIP LOCKED`, so it is safe to run alongside a real
+worker later — and safe to switch off once you have one.
+
+Two Groq notes that will bite eventually:
+
+- **Model names get retired.** `llama-3.3-70b-versatile` was removed and every
+  extraction 404'd. Check https://console.groq.com/docs/models and set
+  `EXTRACTION_MODEL`.
+- **The free tier allows 8000 tokens a minute**, and Groq counts *reserved*
+  completion tokens toward it, so a large batch is refused with a 413 before it
+  runs. The extractor halves an oversized batch and retries, so it works on the
+  free tier — just slowly. A paid tier processes full batches.
 
 ### 2. Fill in the secrets Render can't generate
 
