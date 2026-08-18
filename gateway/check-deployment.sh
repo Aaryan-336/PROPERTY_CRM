@@ -72,9 +72,12 @@ esac
 # ---------------------------------------------------------------------------
 echo
 echo "4. Where is this gateway configured to report?"
-configured=$(grep -E "^API_BASE_URL=" .env 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'")
+# Resolved against this script's own directory, not the caller's: the answer
+# must not change depending on where you happened to run it from.
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+configured=$(grep -E "^API_BASE_URL=" "$here/.env" 2>/dev/null | cut -d= -f2- | tr -d '"' | tr -d "'")
 if [ -z "$configured" ]; then
-  echo "   API_BASE_URL is not set in gateway/.env — it defaults to"
+  echo "   API_BASE_URL is not set in $here/.env — it defaults to"
   echo "   http://127.0.0.1:8000, i.e. this machine, NOT $API."
   echo "   Fix: add  API_BASE_URL=$API  to gateway/.env and restart the gateway."
 elif [ "${configured%/}" = "$API" ]; then
