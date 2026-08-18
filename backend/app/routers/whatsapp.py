@@ -773,6 +773,34 @@ def request_pairing(db: SessionDep, request: Request) -> SessionOut:
     return get_session(db, request)
 
 
+@router.delete(
+    "/whatsapp/pair",
+    response_model=SessionOut,
+    dependencies=[Depends(require("whatsapp.manage"))],
+)
+def cancel_pairing(db: SessionDep, request: Request) -> SessionOut:
+    """Withdraw a pairing request that has not been claimed yet.
+
+    A queued command outlives the screen that queued it. Without this, an owner
+    who pressed Connect while the gateway was down had no way to take it back:
+    the request sat in the database, and whenever the gateway next started --
+    minutes or days later, on somebody else's watch -- it would claim the
+    command and wipe a perfectly good WhatsApp session to show a QR nobody was
+    waiting for any more.
+
+    Only clears the request. A pairing the gateway has already claimed is gone
+    from here and is being acted on; this cannot reach into that.
+    """
+    with system_scope():
+        session = _session_row(db)
+        was_pending = session.pair_requested_at is not None
+        session.pair_requested_at = None
+        db.commit()
+
+    request.state.audit.add(pair_cancelled=True, was_pending=was_pending)
+    return get_session(db, request)
+
+
 @router.post(
     "/whatsapp/sync-groups",
     response_model=SessionOut,

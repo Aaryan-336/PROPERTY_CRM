@@ -355,3 +355,65 @@ def test_the_session_reports_how_many_groups_are_known(client, owner_h, seeded):
     after = client.get("/whatsapp/session", headers=owner_h).json()
     assert after["directory_count"] == 2
     assert after["directory_synced_at"] is not None
+
+
+# ---------------------------------------------------------------------------
+# Withdrawing a request
+# ---------------------------------------------------------------------------
+
+
+def test_the_owner_can_withdraw_a_pairing_request(client, owner_h, seeded):
+    """A queued command outlives the screen that queued it.
+
+    Pressing Connect while the gateway is down leaves the request sitting in the
+    database. Without a way back out, the next time that gateway starts -- an
+    hour later, or on somebody else's watch -- it claims the command and wipes a
+    working WhatsApp session to show a code nobody is waiting for.
+    """
+    client.post("/whatsapp/pair", headers=owner_h)
+    assert client.get("/whatsapp/session", headers=owner_h).json()["pair_pending"]
+
+    res = client.request("DELETE", "/whatsapp/pair", headers=owner_h)
+    assert res.status_code == 200
+    assert res.json()["pair_pending"] is False
+
+    # And the gateway never hears about it.
+    assert _claim(client)["pair"] is False
+
+
+def test_cancelling_leaves_a_queued_group_sync_alone(client, owner_h, seeded):
+    """Two independent commands. Backing out of pairing must not silently
+    cancel a refresh the owner also asked for."""
+    client.post("/whatsapp/pair", headers=owner_h)
+    client.post("/whatsapp/sync-groups", headers=owner_h)
+
+    client.request("DELETE", "/whatsapp/pair", headers=owner_h)
+
+    claimed = _claim(client)
+    assert claimed["pair"] is False
+    assert claimed["sync_groups"] is True
+
+
+def test_cancelling_when_nothing_is_pending_is_harmless(client, owner_h, seeded):
+    """The button is on screen for as long as the panel is, and the panel can
+    outlive the request it was showing."""
+    res = client.request("DELETE", "/whatsapp/pair", headers=owner_h)
+    assert res.status_code == 200
+    assert res.json()["pair_pending"] is False
+
+
+def test_cancelling_cannot_recall_an_already_claimed_pairing(client, owner_h, seeded):
+    """Once the gateway has the command it is clearing its session and opening a
+    socket. Cancelling here clears a request that is already gone; it does not
+    reach into the gateway, and must not pretend otherwise."""
+    client.post("/whatsapp/pair", headers=owner_h)
+    assert _claim(client)["pair"] is True  # gateway has it now
+
+    res = client.request("DELETE", "/whatsapp/pair", headers=owner_h)
+    assert res.status_code == 200
+    assert res.json()["pair_pending"] is False
+
+
+def test_staff_cannot_withdraw_a_pairing_request(client, alice_h, carol_h, seeded):
+    for headers in (alice_h, carol_h):
+        assert client.request("DELETE", "/whatsapp/pair", headers=headers).status_code == 403

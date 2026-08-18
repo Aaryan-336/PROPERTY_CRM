@@ -32,6 +32,7 @@ export function ConnectWhatsApp({ initial }: { initial: WhatsAppSession }) {
   const [qrImage, setQrImage] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -110,6 +111,21 @@ export function ConnectWhatsApp({ initial }: { initial: WhatsAppSession }) {
     }
     setSession(await res.json());
     setAsking(false);
+  }
+
+  async function cancelPairing() {
+    setCancelling(true);
+    setError(null);
+    const res = await fetch("/api/crm/whatsapp/pair", { method: "DELETE" }).catch(
+      () => null,
+    );
+    if (!res || !res.ok) {
+      setError("Could not withdraw the request. Try again in a moment.");
+      setCancelling(false);
+      return;
+    }
+    setSession(await res.json());
+    setCancelling(false);
   }
 
   return (
@@ -219,6 +235,8 @@ export function ConnectWhatsApp({ initial }: { initial: WhatsAppSession }) {
           session={session}
           asking={asking}
           onConnect={requestPairing}
+          onCancel={cancelPairing}
+          cancelling={cancelling}
         />
       )}
 
@@ -269,31 +287,21 @@ function Waiting({
   session,
   asking,
   onConnect,
+  onCancel,
+  cancelling,
 }: {
   session: WhatsAppSession;
   asking: boolean;
   onConnect: () => void;
+  onCancel: () => void;
+  cancelling: boolean;
 }) {
   // The gateway is heartbeating, whatever state it is in. That is the only
   // thing that makes the button meaningful: there is a process to hear it.
   const gatewayAlive = !session.stale;
 
   if (session.pair_pending) {
-    return (
-      <div className="rounded-tile border border-hairline bg-parchment-deep px-4 py-4">
-        <p className="text-sm font-semibold text-ink">Asking for a code…</p>
-        <p className="mt-1.5 text-xs leading-relaxed text-slate">
-          {gatewayAlive
-            ? "The gateway checks every few seconds. The code appears here by itself — stay on this screen."
-            : "Waiting for the gateway to come back. It picks this up the moment it starts, and the code appears here."}
-        </p>
-        {session.pair_requested_at && (
-          <p className="mt-2 text-[11px] text-slate">
-            Asked {relativeTime(session.pair_requested_at)}
-          </p>
-        )}
-      </div>
-    );
+    return <Pairing session={session} onCancel={onCancel} cancelling={cancelling} />;
   }
 
   if (!gatewayAlive) {
@@ -364,5 +372,147 @@ function ConnectButton({
     >
       {asking ? "Asking…" : "Connect WhatsApp"}
     </button>
+  );
+}
+
+/**
+ * The wait between pressing Connect and a code appearing.
+ *
+ * That gap is normally two or three seconds, and it can also be forever — the
+ * gateway is a process on somebody's machine, and if it is not running, or its
+ * secret does not match this deployment's, nothing will ever answer. The old
+ * panel said "waiting for the gateway to come back" in both cases and left the
+ * owner watching a sentence that never changed, with no way out.
+ *
+ * So it counts, and at each stage it says something different and truer than
+ * "waiting". After twenty seconds it stops being optimistic and says what is
+ * actually wrong, because by then it is not a slow gateway, it is a missing one.
+ */
+function Pairing({
+  session,
+  onCancel,
+  cancelling,
+}: {
+  session: WhatsAppSession;
+  onCancel: () => void;
+  cancelling: boolean;
+}) {
+  const [elapsed, setElapsed] = useState(0);
+
+  // Counted from when the request was made, not from when this mounted — the
+  // owner may have navigated away and come back, and restarting at zero would
+  // hide a request that has been stuck for an hour.
+  useEffect(() => {
+    function tick() {
+      const started = session.pair_requested_at
+        ? new Date(session.pair_requested_at).getTime()
+        : Date.now();
+      setElapsed(Math.max(0, Math.round((Date.now() - started) / 1000)));
+    }
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [session.pair_requested_at]);
+
+  const gatewayAlive = !session.stale;
+  const stalled = elapsed > 20 && !gatewayAlive;
+
+  return (
+    <div
+      className={`rounded-tile border px-4 py-4 ${
+        stalled ? "border-signal-soft bg-signal-soft" : "border-hairline bg-parchment-deep"
+      }`}
+      role="status"
+      aria-live="polite"
+    >
+      <div className="flex items-start gap-3">
+        {!stalled && <Spinner />}
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-ink">
+            {stalled
+              ? "Nothing has answered"
+              : gatewayAlive
+                ? "The gateway has it — generating a code…"
+                : "Asking for a code…"}
+          </p>
+
+          {stalled ? (
+            <>
+              <p className="mt-1.5 text-xs leading-relaxed text-slate">
+                Your request is saved, but no gateway has picked it up in{" "}
+                {formatElapsed(elapsed)}. The code is produced by the gateway,
+                not by this site, so one of these is true:
+              </p>
+              <ul className="mt-2 space-y-1 text-xs leading-relaxed text-slate">
+                <li>• it is not running — start it with <code className="tabular">npm start</code></li>
+                <li>• it is pointed at a different server than this one</li>
+                <li>• its secret does not match this server&rsquo;s, so its reports are refused</li>
+              </ul>
+              <p className="mt-2 text-[11px] leading-relaxed text-slate">
+                Run <code className="tabular">./check-deployment.sh</code> in the
+                gateway folder — it names which one.
+              </p>
+            </>
+          ) : (
+            <p className="mt-1.5 text-xs leading-relaxed text-slate">
+              {gatewayAlive
+                ? "It checks every few seconds. The code appears here by itself — stay on this screen."
+                : "Saved. The moment a gateway starts, it picks this up and the code appears here."}
+            </p>
+          )}
+
+          <p className="tabular mt-2 text-[11px] text-slate">
+            Waiting {formatElapsed(elapsed)}
+          </p>
+
+          {/* The way out. A queued command outlives this screen, so without a
+              cancel the only way to stop it was for the gateway to eventually
+              start and wipe a working session to show a code nobody wanted. */}
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={cancelling}
+            className="tap mt-3 rounded-pill border border-hairline bg-card px-4 text-xs font-semibold text-ink disabled:opacity-60"
+          >
+            {cancelling ? "Cancelling…" : "Cancel"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function formatElapsed(seconds: number) {
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
+}
+
+function Spinner() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-sandstone-deep"
+      aria-hidden
+    >
+      <circle
+        cx="12"
+        cy="12"
+        r="9"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="3"
+        opacity="0.25"
+      />
+      <path
+        d="M21 12a9 9 0 0 0-9-9"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="3"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }
