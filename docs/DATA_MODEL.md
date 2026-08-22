@@ -33,7 +33,9 @@ CREATE TABLE contacts (
     budget_max              NUMERIC(14,2),
     preferred_locations     TEXT[],
     property_type_interest  TEXT,
+    bhk                     INTEGER,     -- bedrooms wanted; 4 means "4 or more", as on properties
     buyer_type              TEXT,        -- 'end_user', 'investor'
+    remarks                 TEXT,        -- free notes on the lead; not the client's to read
     lead_score              INTEGER DEFAULT 0,
     stage                   TEXT DEFAULT 'new',  -- pipeline stage
     owner_id                BIGINT REFERENCES users(id),   -- assigned agent

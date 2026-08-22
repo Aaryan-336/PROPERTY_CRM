@@ -123,6 +123,66 @@
   }
 }
 
+/* The budget ladder's tracks.
+ *
+ * A default range input has a ~12px thumb, which is under a third of the 44px
+ * tap target every other control on this app honours. Dragging a budget on a
+ * phone with a 12px thumb means missing it, so the thumb is grown to 26px and
+ * the track thickened to match. `touch-action: none` stops iOS reading a
+ * horizontal drag on the thumb as a page swipe and stealing the gesture.
+ */
+.budget-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 26px;
+  background: transparent;
+  touch-action: none;
+  cursor: pointer;
+}
+
+.budget-slider::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-parchment-deep);
+}
+
+.budget-slider::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-parchment-deep);
+}
+
+.budget-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 26px;
+  width: 26px;
+  margin-top: -10px;
+  border-radius: 999px;
+  background: var(--color-sandstone);
+  border: 3px solid var(--color-card);
+  box-shadow: var(--shadow-card);
+}
+
+.budget-slider::-moz-range-thumb {
+  height: 26px;
+  width: 26px;
+  border-radius: 999px;
+  background: var(--color-sandstone);
+  border: 3px solid var(--color-card);
+  box-shadow: var(--shadow-card);
+}
+
+.budget-slider:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--color-sandstone-deep);
+  outline-offset: 2px;
+}
+
+.budget-slider:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--color-sandstone-deep);
+  outline-offset: 2px;
+}
+
 /* The Journey Timeline's connecting rail. Drawn with a gradient so the line
    fades out after the final node instead of stopping abruptly. */
 .journey-rail {

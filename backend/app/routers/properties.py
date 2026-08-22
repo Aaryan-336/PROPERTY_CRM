@@ -210,6 +210,18 @@ def contact_matches(
             )
         )
 
+    # Size is the first question every buyer answers, so a lead who said 2BHK
+    # should not be shown 4BHKs. Listings that never stated a size stay in --
+    # a WhatsApp forward with no bedroom count is still worth a look -- and 4
+    # means "4 or more" here exactly as it does on the inventory filter.
+    if contact.bhk:
+        stmt = stmt.where(
+            or_(
+                Property.bhk.is_(None),
+                Property.bhk >= contact.bhk if contact.bhk >= 4 else Property.bhk == contact.bhk,
+            )
+        )
+
     # Budget with 10% headroom on the top end: a lead at ₹1Cr will look at
     # ₹1.1Cr, and excluding those makes the feature feel broken.
     if contact.budget_max:
@@ -266,6 +278,10 @@ def contact_matches(
         if contact.property_type_interest and prop.property_type == contact.property_type_interest:
             score += 0.15
             reasons.append(f"{prop.property_type.title()} as requested")
+
+        if contact.bhk and prop.bhk:
+            score += 0.15
+            reasons.append(f"{prop.bhk}BHK as requested")
 
         # Freshness: a listing seen in the last week is far more likely to
         # still be available than one nobody has mentioned in a month.

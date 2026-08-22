@@ -3,8 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { BudgetSlider } from "@/components/BudgetSlider";
 import { ChipGroup } from "@/components/Sheet";
 import { Card } from "@/components/ui";
+import { BHK_OPTIONS } from "@/lib/types";
 import type { DuplicateCandidate } from "@/lib/types";
 
 const SOURCES = [
@@ -36,10 +38,12 @@ export function NewContactForm() {
     budget_min: "",
     budget_max: "",
     preferred_locations: "",
+    remarks: "",
   });
   const [source, setSource] = useState<string | null>("walk_in");
   const [buyerType, setBuyerType] = useState<string | null>(null);
   const [propertyType, setPropertyType] = useState<string | null>(null);
+  const [bhk, setBhk] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [duplicates, setDuplicates] = useState<DuplicateCandidate[] | null>(null);
@@ -68,6 +72,8 @@ export function NewContactForm() {
         lead_source: source,
         buyer_type: buyerType,
         property_type_interest: propertyType,
+        bhk: bhk ? Number(bhk) : null,
+        remarks: form.remarks.trim() || null,
       }),
     }).catch(() => null);
 
@@ -197,26 +203,17 @@ export function NewContactForm() {
       </Card>
 
       <Card className="space-y-4 p-5">
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Budget from (₹)">
-            <input
-              type="number"
-              inputMode="numeric"
-              value={form.budget_min}
-              onChange={(e) => set("budget_min", e.target.value)}
-              className={`${inputClass} tabular`}
-            />
-          </Field>
-          <Field label="Budget to (₹)">
-            <input
-              type="number"
-              inputMode="numeric"
-              value={form.budget_max}
-              onChange={(e) => set("budget_max", e.target.value)}
-              className={`${inputClass} tabular`}
-            />
-          </Field>
-        </div>
+        <BudgetSlider
+          min={form.budget_min}
+          max={form.budget_max}
+          onChange={({ min, max }) =>
+            setForm((prev) => ({
+              ...prev,
+              budget_min: min === null ? "" : String(min),
+              budget_max: max === null ? "" : String(max),
+            }))
+          }
+        />
 
         <Field label="Preferred locations">
           <input
@@ -236,6 +233,15 @@ export function NewContactForm() {
         />
 
         <ChipGroup
+          label="Size"
+          options={BHK_OPTIONS}
+          value={bhk as never}
+          onChange={(v) => setBhk(v)}
+          columns={4}
+          allowClear
+        />
+
+        <ChipGroup
           label="Buyer type"
           options={BUYER_TYPES}
           value={buyerType as never}
@@ -250,6 +256,23 @@ export function NewContactForm() {
           onChange={(v) => setSource(v)}
           allowClear
         />
+      </Card>
+
+      <Card className="p-5">
+        <Field label="Remarks">
+          <textarea
+            value={form.remarks}
+            onChange={(e) => set("remarks", e.target.value)}
+            rows={4}
+            maxLength={4000}
+            placeholder="Wants possession before June. Husband decides. Already seen Lodha Amara."
+            className={`${inputClass} resize-y py-3 leading-relaxed`}
+          />
+        </Field>
+        <p className="mt-1.5 text-[11px] text-slate">
+          Anything the fields above cannot hold. Visible to whoever works this
+          lead — not to the client.
+        </p>
       </Card>
 
       {error && (

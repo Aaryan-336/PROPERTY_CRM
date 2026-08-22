@@ -99,6 +99,14 @@ export function Sheet({
 
 /** Large tap-to-select chips. Used instead of dropdowns wherever the option
  *  set is known and short — faster with one thumb, and no keyboard. */
+// Written out rather than interpolated: Tailwind scans source text, and a class
+// assembled as `grid-cols-${n}` is invisible to it and gets no rule generated.
+const COLUMNS = {
+  2: "grid-cols-2",
+  3: "grid-cols-3",
+  4: "grid-cols-4",
+} as const;
+
 export function ChipGroup<T extends string>({
   label,
   options,
@@ -111,15 +119,13 @@ export function ChipGroup<T extends string>({
   options: readonly { value: T; label: string }[];
   value: T | null;
   onChange: (value: T | null) => void;
-  columns?: 2 | 3;
+  columns?: 2 | 3 | 4;
   allowClear?: boolean;
 }) {
   return (
     <fieldset>
       <legend className="mb-2 text-xs font-semibold text-slate">{label}</legend>
-      <div
-        className={`grid gap-2 ${columns === 3 ? "grid-cols-3" : "grid-cols-2"}`}
-      >
+      <div className={`grid gap-2 ${COLUMNS[columns]}`}>
         {options.map((option) => {
           const selected = value === option.value;
           return (

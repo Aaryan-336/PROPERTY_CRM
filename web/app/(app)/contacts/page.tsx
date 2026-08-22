@@ -6,11 +6,12 @@ import { Pagination } from "@/components/Pagination";
 import { PlusIcon } from "@/components/icons";
 import { Card, EmptyState, STAGE_TONE, StatusPill } from "@/components/ui";
 import { api, qs } from "@/lib/api";
+import { BUDGET_BANDS, splitBudgetBand } from "@/lib/budget";
 import { budgetRange, fullName, relativeTime, stageLabel } from "@/lib/format";
 import { redirect } from "next/navigation";
 
 import { getCurrentUser } from "@/lib/session";
-import { STAGES, type Contact, type Paged, type User } from "@/lib/types";
+import { BHK_OPTIONS, STAGES, type Contact, type Paged, type User } from "@/lib/types";
 
 export const metadata = { title: "Leads · Balaji CRM" };
 
@@ -35,6 +36,10 @@ export default async function ContactsPage({
   if (user?.role === "cold_caller") redirect("/queue");
   const limit = 25;
   const offset = Number(params.offset ?? 0);
+  // One control, two API parameters: a band is the pair of figures a person
+  // actually means, and keeping it whole in the URL is what lets the filter bar
+  // stay a plain select and the link stay shareable.
+  const budget = splitBudgetBand(params.budget);
 
   const [contacts, staff] = await Promise.all([
     api<Paged<Contact>>(
@@ -45,6 +50,9 @@ export default async function ContactsPage({
         stage: params.stage,
         source: params.source,
         owner_id: params.owner_id,
+        bhk: params.bhk,
+        budget_min: budget.min,
+        budget_max: budget.max,
       })}`,
     ),
     user?.role === "owner" ? api<User[]>("/users") : Promise.resolve([]),
@@ -52,6 +60,8 @@ export default async function ContactsPage({
 
   const selects = [
     { name: "stage", label: "Stage", options: STAGES },
+    { name: "budget", label: "Budget", options: BUDGET_BANDS },
+    { name: "bhk", label: "BHK", options: BHK_OPTIONS },
     { name: "source", label: "Source", options: SOURCES },
     ...(user?.role === "owner"
       ? [
@@ -100,7 +110,11 @@ export default async function ContactsPage({
       {contacts.items.length === 0 ? (
         <EmptyState
           title={
-            params.q || params.stage || params.source
+            params.q ||
+            params.stage ||
+            params.source ||
+            params.budget ||
+            params.bhk
               ? "No leads match these filters. Try clearing them."
               : "No leads assigned yet — ask the owner to assign leads, or add one you sourced yourself."
           }
@@ -130,7 +144,7 @@ export default async function ContactsPage({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-hairline bg-parchment text-left">
-                  {["Name", "Phone", "Budget", "Locations", "Stage", "Owner", "Last activity"].map(
+                  {["Name", "Phone", "Budget", "Size", "Locations", "Stage", "Owner", "Last activity"].map(
                     (heading) => (
                       <th
                         key={heading}
@@ -158,6 +172,11 @@ export default async function ContactsPage({
                     </td>
                     <td className="tabular px-4 py-2.5 text-slate">
                       {budgetRange(contact.budget_min, contact.budget_max)}
+                    </td>
+                    <td className="tabular px-4 py-2.5 text-slate">
+                      {contact.bhk
+                        ? `${contact.bhk >= 4 ? "4+" : contact.bhk} BHK`
+                        : "—"}
                     </td>
                     <td className="max-w-[180px] truncate px-4 py-2.5 text-slate">
                       {contact.preferred_locations?.join(", ") || "—"}

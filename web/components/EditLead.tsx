@@ -3,8 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { Sheet } from "@/components/Sheet";
-import { STAGES } from "@/lib/types";
+import { BudgetSlider } from "@/components/BudgetSlider";
+import { ChipGroup, Sheet } from "@/components/Sheet";
+import { BHK_OPTIONS, STAGES } from "@/lib/types";
 import type { Contact } from "@/lib/types";
 
 const SOURCES = [
@@ -50,6 +51,8 @@ export function EditLead({ contact }: { contact: Contact }) {
     preferred_locations: (contact.preferred_locations ?? []).join(", "),
     property_type_interest: contact.property_type_interest ?? "",
     buyer_type: contact.buyer_type ?? "",
+    bhk: contact.bhk === null ? "" : String(contact.bhk),
+    remarks: contact.remarks ?? "",
   });
 
   function set<K extends keyof typeof form>(key: K, value: string) {
@@ -77,6 +80,8 @@ export function EditLead({ contact }: { contact: Contact }) {
         .filter(Boolean),
       property_type_interest: form.property_type_interest || null,
       buyer_type: form.buyer_type || null,
+      bhk: form.bhk === "" ? null : Number(form.bhk),
+      remarks: form.remarks.trim() || null,
     };
 
     const res = await fetch(`/api/crm/contacts/${contact.id}`, {
@@ -142,20 +147,26 @@ export function EditLead({ contact }: { contact: Contact }) {
             options={STAGES.map((s) => ({ value: s.value, label: s.label }))}
           />
 
-          <div className="grid grid-cols-2 gap-3">
-            <Field
-              label="Budget from (₹)"
-              value={String(form.budget_min)}
-              onChange={(v) => set("budget_min", v)}
-              inputMode="numeric"
-            />
-            <Field
-              label="Budget to (₹)"
-              value={String(form.budget_max)}
-              onChange={(v) => set("budget_max", v)}
-              inputMode="numeric"
-            />
-          </div>
+          <BudgetSlider
+            min={form.budget_min}
+            max={form.budget_max}
+            onChange={({ min, max }) =>
+              setForm((f) => ({
+                ...f,
+                budget_min: min === null ? "" : String(min),
+                budget_max: max === null ? "" : String(max),
+              }))
+            }
+          />
+
+          <ChipGroup
+            label="Size"
+            options={BHK_OPTIONS}
+            value={(form.bhk || null) as never}
+            onChange={(v) => set("bhk", v ?? "")}
+            columns={4}
+            allowClear
+          />
 
           <Field
             label="Preferred areas"
@@ -188,6 +199,20 @@ export function EditLead({ contact }: { contact: Contact }) {
             options={SOURCES.map((t) => ({ value: t, label: titleish(t) }))}
             allowEmpty
           />
+
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-semibold text-slate">
+              Remarks
+            </span>
+            <textarea
+              value={form.remarks}
+              onChange={(e) => set("remarks", e.target.value)}
+              rows={4}
+              maxLength={4000}
+              placeholder="Possession timeline, who decides, what they have already rejected."
+              className="w-full resize-y rounded-tile border border-hairline bg-card px-4 py-3 text-[16px] leading-relaxed outline-none focus:border-sandstone focus:ring-2 focus:ring-sandstone-soft"
+            />
+          </label>
 
           {error && (
             <p role="alert" className="rounded-tile bg-signal-soft px-4 py-2.5 text-sm text-signal">

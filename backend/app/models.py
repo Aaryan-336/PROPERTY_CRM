@@ -193,7 +193,13 @@ class Contact(Base):
     budget_max: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
     preferred_locations: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
     property_type_interest: Mapped[str | None] = mapped_column(Text)
+    # How many bedrooms the lead is after, in the same units as Property.bhk so
+    # the two compare without translation. 4 reads as "4 or more" on both.
+    bhk: Mapped[int | None] = mapped_column(Integer)
     buyer_type: Mapped[str | None] = mapped_column(Text)
+    # Free text for everything the fields above cannot hold -- possession
+    # timelines, who actually decides, what they have already rejected.
+    remarks: Mapped[str | None] = mapped_column(Text)
     lead_score: Mapped[int | None] = mapped_column(Integer, default=0)
     stage: Mapped[str | None] = mapped_column(Text, default="new")
     # A row from a purchased calling list is a phone number, not a lead. It sits
@@ -228,6 +234,9 @@ class Contact(Base):
         # Every batch performance figure groups by this, and the leads list
         # filters on is_lead, so the two travel together.
         Index("idx_contacts_batch", "batch_id", "is_lead"),
+        # The leads screen filters by size on top of the is_lead narrowing it
+        # always applies, so the two travel together here as well.
+        Index("idx_contacts_bhk", "bhk", "is_lead"),
     )
 
     @property

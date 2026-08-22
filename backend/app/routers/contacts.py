@@ -67,6 +67,22 @@ def list_contacts(
     source: str | None = None,
     min_score: int | None = None,
     q: str | None = Query(default=None, description="Name or phone fragment"),
+    bhk: int | None = Query(
+        default=None,
+        ge=0,
+        le=20,
+        description="Bedrooms wanted. 4 matches 4 and above, as on inventory.",
+    ),
+    budget_min: Decimal | None = Query(
+        default=None,
+        ge=0,
+        description="Lower edge of a budget band, in rupees.",
+    ),
+    budget_max: Decimal | None = Query(
+        default=None,
+        ge=0,
+        description="Upper edge of a budget band, in rupees.",
+    ),
     batch_id: int | None = Query(
         default=None, description="Only numbers from this imported database"
     ),
@@ -103,6 +119,28 @@ def list_contacts(
         stmt = stmt.where(Contact.lead_source == source)
     if min_score is not None:
         stmt = stmt.where(Contact.lead_score >= min_score)
+    if bhk is not None:
+        # 4 is the top option on the inventory filter and means "4 or more"
+        # there; a lead asking for a 5BHK belongs under it rather than nowhere.
+        stmt = stmt.where(Contact.bhk >= bhk if bhk >= 4 else Contact.bhk == bhk)
+
+    # A budget band matches any lead whose own range overlaps it. Overlap
+    # rather than containment, because a lead willing to spend 80L-1.2Cr is
+    # exactly who the 1-2Cr shortlist is for, and a containment test would drop
+    # them. Leads with no budget stated at all are excluded: the filter is a
+    # question about money, and "unknown" is not an answer to it.
+    if budget_min is not None or budget_max is not None:
+        stmt = stmt.where(
+            or_(Contact.budget_min.is_not(None), Contact.budget_max.is_not(None))
+        )
+    if budget_min is not None:
+        stmt = stmt.where(
+            or_(Contact.budget_max.is_(None), Contact.budget_max >= budget_min)
+        )
+    if budget_max is not None:
+        stmt = stmt.where(
+            or_(Contact.budget_min.is_(None), Contact.budget_min <= budget_max)
+        )
     if q:
         needle = f"%{q.strip()}%"
         stmt = stmt.where(
@@ -221,7 +259,9 @@ def export_contacts(
             "lead_source",
             "budget_min",
             "budget_max",
+            "bhk",
             "preferred_locations",
+            "remarks",
             "owner_id",
             "created_at",
         ]
@@ -238,7 +278,9 @@ def export_contacts(
                 c.lead_source or "",
                 c.budget_min or "",
                 c.budget_max or "",
+                c.bhk or "",
                 "|".join(c.preferred_locations or []),
+                c.remarks or "",
                 c.owner_id or "",
                 c.created_at.isoformat() if c.created_at else "",
             ]

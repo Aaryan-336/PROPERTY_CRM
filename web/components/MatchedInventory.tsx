@@ -23,7 +23,7 @@ export function MatchedInventory({ matches }: { matches: PropertyMatch[] }) {
     <Card className="p-5">
       <SectionHeading
         title="Matching inventory"
-        hint="Based on this lead's budget and preferred areas"
+        hint="Based on this lead's budget, size and preferred areas"
         action={
           <Link
             href="/properties"
@@ -36,7 +36,7 @@ export function MatchedInventory({ matches }: { matches: PropertyMatch[] }) {
       />
 
       {matches.length === 0 ? (
-        <EmptyState title="Nothing in inventory fits this lead's budget and areas yet. Widen the budget on the lead, or check back as the WhatsApp feed brings new listings in." />
+        <EmptyState title="Nothing in inventory fits this lead's budget, size and areas yet. Widen the budget or drop the size on the lead, or check back as the WhatsApp feed brings new listings in." />
       ) : (
         <ul className="divide-y divide-hairline">
           {matches.map(({ property, reasons }) => (

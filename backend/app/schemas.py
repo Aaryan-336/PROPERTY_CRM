@@ -331,7 +331,10 @@ class ContactBase(BaseModel):
     budget_max: Decimal | None = None
     preferred_locations: list[str] | None = None
     property_type_interest: str | None = None
+    # Bedrooms wanted, same units as Property.bhk. 4 means "4 or more".
+    bhk: int | None = Field(default=None, ge=0, le=20)
     buyer_type: Literal["end_user", "investor"] | None = None
+    remarks: str | None = Field(default=None, max_length=4000)
     stage: str | None = None
 
 
@@ -356,7 +359,9 @@ class ContactUpdate(BaseModel):
     budget_max: Decimal | None = None
     preferred_locations: list[str] | None = None
     property_type_interest: str | None = None
+    bhk: int | None = Field(default=None, ge=0, le=20)
     buyer_type: str | None = None
+    remarks: str | None = Field(default=None, max_length=4000)
     stage: str | None = None
     owner_id: int | None = None
     phone_masked: bool | None = None
@@ -377,7 +382,9 @@ class ContactOut(BaseModel):
     budget_max: Decimal | None = None
     preferred_locations: list[str] | None = None
     property_type_interest: str | None = None
+    bhk: int | None = None
     buyer_type: str | None = None
+    remarks: str | None = None
     lead_score: int | None = None
     stage: str | None = None
     # False for an imported number nobody has qualified yet. Drives whether the

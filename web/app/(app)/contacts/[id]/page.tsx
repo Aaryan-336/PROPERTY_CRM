@@ -141,9 +141,14 @@ export default async function ContactDetail({
           <Detail
             label="Looking for"
             value={
-              contact.property_type_interest
-                ? titleCase(contact.property_type_interest)
-                : "—"
+              [
+                contact.bhk ? `${contact.bhk >= 4 ? "4+" : contact.bhk} BHK` : null,
+                contact.property_type_interest
+                  ? titleCase(contact.property_type_interest)
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" · ") || "—"
             }
           />
           <Detail
@@ -162,6 +167,20 @@ export default async function ContactDetail({
           />
           <Detail label="Calls logged" value={String(calls.total)} mono />
         </dl>
+
+        {contact.remarks && (
+          <div className="mt-4 border-t border-ink-line pt-4">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-muted">
+              Remarks
+            </p>
+            {/* whitespace-pre-line: whoever typed this put the line breaks
+                where they meant them, and flattening them turns three separate
+                notes into one run-on sentence. */}
+            <p className="mt-1.5 whitespace-pre-line text-sm leading-relaxed text-ink-dim">
+              {contact.remarks}
+            </p>
+          </div>
+        )}
       </InkCard>
 
       <div className="grid gap-5 [&>*]:min-w-0 lg:grid-cols-[1fr_360px]">

@@ -49,6 +49,9 @@ export function ContactRow({
               <>
                 {" · "}
                 {budgetRange(contact.budget_min, contact.budget_max)}
+                {contact.bhk
+                  ? ` · ${contact.bhk >= 4 ? "4+" : contact.bhk} BHK`
+                  : ""}
               </>
             )}
           </p>

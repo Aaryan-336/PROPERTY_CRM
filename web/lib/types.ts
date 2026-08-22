@@ -38,7 +38,10 @@ export type Contact = {
   budget_max: string | null;
   preferred_locations: string[] | null;
   property_type_interest: string | null;
+  /** Bedrooms wanted. 4 means "4 or more", as it does on inventory. */
+  bhk: number | null;
   buyer_type: string | null;
+  remarks: string | null;
   lead_score: number | null;
   stage: string | null;
   owner_id: number | null;
@@ -47,6 +50,20 @@ export type Contact = {
   updated_at: string;
   last_activity_at: string | null;
 };
+
+/**
+ * The sizes a lead can ask for.
+ *
+ * Same four rungs the inventory filter offers, so "3 BHK" on a lead and "3 BHK"
+ * on a listing are the same question — and 4 is the open top end on both,
+ * rather than a lead asking for a 5BHK falling through the floor.
+ */
+export const BHK_OPTIONS = [
+  { value: "1", label: "1 BHK" },
+  { value: "2", label: "2 BHK" },
+  { value: "3", label: "3 BHK" },
+  { value: "4", label: "4+ BHK" },
+] as const;
 
 export type Property = {
   id: number;
