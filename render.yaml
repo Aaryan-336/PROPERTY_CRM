@@ -54,8 +54,10 @@ services:
         sync: false
       - key: GROQ_API_KEY
         sync: false
-      - key: JWT_EXPIRY_HOURS
-        value: "12"
+      - key: SESSION_IDLE_DAYS
+        value: "30"
+      - key: SESSION_ABSOLUTE_DAYS
+        value: "90"
       - key: MAX_PAGE_SIZE
         value: "50"
       - key: LIST_RATE_LIMIT_PER_MINUTE

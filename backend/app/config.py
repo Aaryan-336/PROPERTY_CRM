@@ -30,7 +30,20 @@ class Settings(BaseSettings):
 
     jwt_secret: str = "change-me-in-production-please-use-a-long-random-value"
     jwt_algorithm: str = "HS256"
-    jwt_expiry_hours: int = 12
+
+    # How a session ends, in two independent numbers rather than one.
+    #
+    # `idle` is the token's own lifetime, and it is renewed whenever the app is
+    # used, so it measures *silence*: put the phone down for this long and you
+    # sign in again. `absolute` is measured from the moment the password was
+    # typed and is never extended, so a session cannot become permanent however
+    # much it is used -- which is the whole reason a sliding session is safe to
+    # make this long.
+    #
+    # Thirty days of silence is longer than any holiday an agent takes; ninety
+    # days is a quarterly re-authentication. Shorten both on a shared device.
+    session_idle_days: int = 30
+    session_absolute_days: int = 90
 
     # Capped pagination is a security control (SECURITY_MODEL.md §4): it bounds
     # how much of the client list any single request can return.

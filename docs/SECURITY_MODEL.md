@@ -37,7 +37,26 @@ The realistic threat here isn't an external hacker — it's an **insider with le
 
 ## Session & device controls (Phase 3)
 
-- JWT sessions with a reasonable expiry (e.g. 12–24h) requiring re-login, rather than indefinite tokens.
+- **Sliding sessions with an absolute cap**, rather than one fixed expiry.
+  A single lifetime forced a choice between "signs you out mid-afternoon" and
+  "never expires", and the 12h setting this replaces picked the first — which in
+  practice trained everyone to re-enter a password on any hiccup, the habit
+  phishing depends on. Two independent numbers instead:
+  - `SESSION_IDLE_DAYS` (default 30) — the token's own life, renewed whenever
+    the app is used, so it measures *silence*, not elapsed time.
+  - `SESSION_ABSOLUTE_DAYS` (default 90) — measured from the moment the password
+    was typed and **never** extended, so no amount of use makes a session
+    permanent. `sessions.chain_started_at` carries it across renewals.
+
+  Renewal is `POST /auth/refresh`. It runs behind the ordinary auth dependency,
+  so it can only extend a session that is already live — it can never revive a
+  revoked one, and therefore cannot be used to undo a logout, a password change
+  or a deactivation. A renewed token supersedes its predecessor within
+  `RENEWAL_GRACE_SECONDS` (60), which covers requests already in flight without
+  leaving the old token useful.
+
+  Shorten both on a shared device. On a lost phone, deactivating the user or
+  changing the password still kills every session immediately.
 - Optional: cap concurrent sessions per user, so a shared/leaked credential can't be used from many devices simultaneously without at least logging the anomaly.
 - Immediate session invalidation on account deactivation (when staff leave) — deactivating a `users` row should invalidate any outstanding tokens, not just block new logins.
 

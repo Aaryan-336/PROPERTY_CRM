@@ -602,8 +602,23 @@ class Session(Base):
     )
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     user_agent: Mapped[str | None] = mapped_column(Text)
+    # When the password was actually typed. Carried forward across renewals so
+    # that sliding a session can never outrun the absolute cap.
+    chain_started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    # When this session was last renewed. Null until the first renewal.
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    __table_args__ = (Index("idx_sessions_user", "user_id", "revoked_at"),)
+    __table_args__ = (
+        Index("idx_sessions_user", "user_id", "revoked_at"),
+        Index(
+            "idx_sessions_live",
+            "user_id",
+            "expires_at",
+            postgresql_where=(revoked_at.is_(None)),
+        ),
+    )
 
 
 class Task(Base):

@@ -9,6 +9,7 @@ Base: REST, JSON, JWT bearer auth. Every endpoint below is subject to the role s
 | POST | `/auth/login` | Returns JWT with embedded role claim |
 | POST | `/auth/change-password` | Change your own. Requires the current password — being signed in is not enough. Revokes every session and returns a freshly issued token so the caller stays signed in and everyone else does not. |
 | POST | `/users/{id}/reset-password` | Owner only. For staff who have lost theirs; there is no email on this system and so no reset link. Generates one if none supplied, and never echoes one that was. Refuses any Owner, including the caller, so it cannot be used to skip the current-password check. |
+| POST | `/auth/refresh` | Trade a still-valid token for a fresh one, extending the idle window but never the absolute cap. Runs behind the auth dependency, so it can extend a live session and never revive a revoked one. Called by the Next.js proxy once a token is past half-life; not audited. |
 | POST | `/auth/logout` | Invalidates session/token |
 
 ## Users (Owner only, mostly)

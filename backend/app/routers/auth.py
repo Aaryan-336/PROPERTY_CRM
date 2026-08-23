@@ -15,9 +15,11 @@ from app.schemas import (
     UserOut,
 )
 from app.security import (
+    RefusedRenewal,
     decode_token,
     hash_password,
     issue_token,
+    renew_session,
     revoke_all_for_user,
     revoke_jti,
     verify_password,
@@ -48,6 +50,48 @@ def login(payload: LoginRequest, request: Request, db: SessionDep) -> LoginRespo
 
     return LoginResponse(
         access_token=token,
+        expires_at=expires_at,
+        user=UserOut.model_validate(user),
+    )
+
+
+@router.post("/auth/refresh", response_model=LoginResponse)
+def refresh(request: Request, principal: PrincipalDep, db: SessionDep) -> LoginResponse:
+    """Trade a still-valid token for a fresh one.
+
+    The dependency has already proved the caller: an expired, revoked or forged
+    token never reaches this body, so this endpoint cannot resurrect a dead
+    session -- it can only extend a live one. That is what makes it safe to
+    call from the proxy on an ordinary page load with nobody watching.
+
+    Deliberately not audited. It is not an action anyone took, it is the same
+    person still being here, and a row per fortnight per device would be noise
+    in a log the owner is meant to read.
+    """
+    header = request.headers.get("authorization", "")
+    token = (
+        header[7:].strip()
+        if header.lower().startswith("bearer ")
+        else request.cookies.get("balaji_session")
+    )
+    claims = decode_token(token) if token else None
+    if not claims:
+        raise ApiError(401, "invalid_token", "Sign in again.")
+
+    try:
+        new_token, expires_at = renew_session(
+            db, claims, request.headers.get("user-agent")
+        )
+    except RefusedRenewal as refusal:
+        raise ApiError(401, refusal.reason, refusal.message) from refusal
+
+    db.commit()
+
+    with system_scope():
+        user = db.execute(select(User).where(User.id == principal.id)).scalar_one()
+
+    return LoginResponse(
+        access_token=new_token,
         expires_at=expires_at,
         user=UserOut.model_validate(user),
     )
