@@ -73,6 +73,11 @@ def list_contacts(
         le=20,
         description="Bedrooms wanted. 4 matches 4 and above, as on inventory.",
     ),
+    listing_type: str | None = Query(
+        default=None,
+        pattern="^(rent|outright)$",
+        description="Renting or buying, as on the inventory filter.",
+    ),
     budget_min: Decimal | None = Query(
         default=None,
         ge=0,
@@ -119,6 +124,8 @@ def list_contacts(
         stmt = stmt.where(Contact.lead_source == source)
     if min_score is not None:
         stmt = stmt.where(Contact.lead_score >= min_score)
+    if listing_type:
+        stmt = stmt.where(Contact.listing_type_interest == listing_type)
     if bhk is not None:
         # 4 is the top option on the inventory filter and means "4 or more"
         # there; a lead asking for a 5BHK belongs under it rather than nowhere.
@@ -259,6 +266,7 @@ def export_contacts(
             "lead_source",
             "budget_min",
             "budget_max",
+            "listing_type_interest",
             "bhk",
             "preferred_locations",
             "remarks",
@@ -278,6 +286,7 @@ def export_contacts(
                 c.lead_source or "",
                 c.budget_min or "",
                 c.budget_max or "",
+                c.listing_type_interest or "",
                 c.bhk or "",
                 "|".join(c.preferred_locations or []),
                 c.remarks or "",

@@ -33,6 +33,7 @@ CREATE TABLE contacts (
     budget_max              NUMERIC(14,2),
     preferred_locations     TEXT[],
     property_type_interest  TEXT,
+    listing_type_interest   TEXT,        -- 'rent' or 'outright'; nullable here, NOT NULL on properties
     bhk                     INTEGER,     -- bedrooms wanted; 4 means "4 or more", as on properties
     buyer_type              TEXT,        -- 'end_user', 'investor'
     remarks                 TEXT,        -- free notes on the lead; not the client's to read

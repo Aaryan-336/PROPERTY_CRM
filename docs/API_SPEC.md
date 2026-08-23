@@ -26,7 +26,7 @@ Base: REST, JSON, JWT bearer auth. Every endpoint below is subject to the role s
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/contacts` | Paginated (max 50/page), filterable by stage/owner/source/score, by size (`bhk`, where 4 means 4 and above), and by budget band (`budget_min`/`budget_max` in rupees — a band matches any lead whose own range *overlaps* it, and leads with no budget stated are left out). Query-scoped by role. Excludes imported numbers nobody has flagged as a lead — `include_targets=true` includes them, `batch_id` narrows to one database. |
+| GET | `/contacts` | Paginated (max 50/page), filterable by stage/owner/source/score, by size (`bhk`, where 4 means 4 and above), by `listing_type` (`rent`/`outright`), and by budget band (`budget_min`/`budget_max` in rupees — a band matches any lead whose own range *overlaps* it, and leads with no budget stated are left out). Query-scoped by role. Excludes imported numbers nobody has flagged as a lead — `include_targets=true` includes them, `batch_id` narrows to one database. |
 | POST | `/contacts` | Create; triggers dedup check |
 | GET | `/contacts/{id}` | Full detail; phone/email masked per role + `phone_masked` state |
 | PATCH | `/contacts/{id}` | Update fields; audit-logged |
@@ -49,7 +49,7 @@ Base: REST, JSON, JWT bearer auth. Every endpoint below is subject to the role s
 | GET | `/properties/{id}` | Detail, includes `property_interests` history |
 | PATCH | `/properties/{id}` | Update status/price/etc. |
 | GET | `/properties/{id}/matches` | Suggested matching contacts for this property (Phase 2, not yet built) |
-| GET | `/contacts/{id}/matches` | **Built.** Suggested inventory for a lead, scored on preferred location, budget fit (10% headroom over `budget_max`), property type, size and freshness. A stated `bhk` on the lead excludes listings of a different size, but keeps listings that never stated one. Each result carries the reasons it matched — an unexplained ranking does not get used. |
+| GET | `/contacts/{id}/matches` | **Built.** Suggested inventory for a lead, scored on preferred location, budget fit (10% headroom over `budget_max`), property type, size and freshness. A stated `bhk` on the lead excludes listings of a different size, but keeps listings that never stated one; a stated `listing_type_interest` excludes the other book outright, since rent and purchase prices are not the same kind of number. Each result carries the reasons it matched — an unexplained ranking does not get used. |
 | GET | `/properties/{id}/sources` | Provenance for a listing: every group/broker sighting, with the raw message. Readable by all roles. |
 | POST | `/properties/{id}/review` | Owner only — confirm or reject a low-confidence extraction. Rejecting soft-deletes it. |
 

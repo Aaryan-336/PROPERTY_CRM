@@ -331,6 +331,8 @@ class ContactBase(BaseModel):
     budget_max: Decimal | None = None
     preferred_locations: list[str] | None = None
     property_type_interest: str | None = None
+    # Renting or buying. Same vocabulary as Property.listing_type.
+    listing_type_interest: Literal["rent", "outright"] | None = None
     # Bedrooms wanted, same units as Property.bhk. 4 means "4 or more".
     bhk: int | None = Field(default=None, ge=0, le=20)
     buyer_type: Literal["end_user", "investor"] | None = None
@@ -359,6 +361,7 @@ class ContactUpdate(BaseModel):
     budget_max: Decimal | None = None
     preferred_locations: list[str] | None = None
     property_type_interest: str | None = None
+    listing_type_interest: Literal["rent", "outright"] | None = None
     bhk: int | None = Field(default=None, ge=0, le=20)
     buyer_type: str | None = None
     remarks: str | None = Field(default=None, max_length=4000)
@@ -382,6 +385,7 @@ class ContactOut(BaseModel):
     budget_max: Decimal | None = None
     preferred_locations: list[str] | None = None
     property_type_interest: str | None = None
+    listing_type_interest: str | None = None
     bhk: int | None = None
     buyer_type: str | None = None
     remarks: str | None = None

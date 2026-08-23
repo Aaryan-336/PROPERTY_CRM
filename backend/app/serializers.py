@@ -102,6 +102,7 @@ def serialize_contacts(
                 budget_max=c.budget_max,
                 preferred_locations=c.preferred_locations,
                 property_type_interest=c.property_type_interest,
+                listing_type_interest=c.listing_type_interest,
                 bhk=c.bhk,
                 buyer_type=c.buyer_type,
                 remarks=c.remarks,

@@ -11,7 +11,14 @@ import { budgetRange, fullName, relativeTime, stageLabel } from "@/lib/format";
 import { redirect } from "next/navigation";
 
 import { getCurrentUser } from "@/lib/session";
-import { BHK_OPTIONS, STAGES, type Contact, type Paged, type User } from "@/lib/types";
+import {
+  BHK_OPTIONS,
+  LISTING_TYPES,
+  STAGES,
+  type Contact,
+  type Paged,
+  type User,
+} from "@/lib/types";
 
 export const metadata = { title: "Leads · Balaji CRM" };
 
@@ -51,6 +58,7 @@ export default async function ContactsPage({
         source: params.source,
         owner_id: params.owner_id,
         bhk: params.bhk,
+        listing_type: params.listing_type,
         budget_min: budget.min,
         budget_max: budget.max,
       })}`,
@@ -60,6 +68,7 @@ export default async function ContactsPage({
 
   const selects = [
     { name: "stage", label: "Stage", options: STAGES },
+    { name: "listing_type", label: "Rent / Buy", options: LISTING_TYPES },
     { name: "budget", label: "Budget", options: BUDGET_BANDS },
     { name: "bhk", label: "BHK", options: BHK_OPTIONS },
     { name: "source", label: "Source", options: SOURCES },
@@ -114,7 +123,8 @@ export default async function ContactsPage({
             params.stage ||
             params.source ||
             params.budget ||
-            params.bhk
+            params.bhk ||
+            params.listing_type
               ? "No leads match these filters. Try clearing them."
               : "No leads assigned yet — ask the owner to assign leads, or add one you sourced yourself."
           }
@@ -172,6 +182,7 @@ export default async function ContactsPage({
                     </td>
                     <td className="tabular px-4 py-2.5 text-slate">
                       {budgetRange(contact.budget_min, contact.budget_max)}
+                      {contact.listing_type_interest === "rent" ? " /mo" : ""}
                     </td>
                     <td className="tabular px-4 py-2.5 text-slate">
                       {contact.bhk

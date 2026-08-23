@@ -193,6 +193,10 @@ class Contact(Base):
     budget_max: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
     preferred_locations: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
     property_type_interest: Mapped[str | None] = mapped_column(Text)
+    # 'rent' or 'outright', the same vocabulary as Property.listing_type. The
+    # inventory side is NOT NULL because a listing that does not say is not a
+    # listing; this side is nullable because leads predate the question.
+    listing_type_interest: Mapped[str | None] = mapped_column(Text)
     # How many bedrooms the lead is after, in the same units as Property.bhk so
     # the two compare without translation. 4 reads as "4 or more" on both.
     bhk: Mapped[int | None] = mapped_column(Integer)
@@ -237,6 +241,7 @@ class Contact(Base):
         # The leads screen filters by size on top of the is_lead narrowing it
         # always applies, so the two travel together here as well.
         Index("idx_contacts_bhk", "bhk", "is_lead"),
+        Index("idx_contacts_listing_type", "listing_type_interest", "is_lead"),
     )
 
     @property

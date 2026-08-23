@@ -38,6 +38,8 @@ export type Contact = {
   budget_max: string | null;
   preferred_locations: string[] | null;
   property_type_interest: string | null;
+  /** 'rent' or 'outright' — the same two words inventory uses. */
+  listing_type_interest: string | null;
   /** Bedrooms wanted. 4 means "4 or more", as it does on inventory. */
   bhk: number | null;
   buyer_type: string | null;
@@ -63,6 +65,17 @@ export const BHK_OPTIONS = [
   { value: "2", label: "2 BHK" },
   { value: "3", label: "3 BHK" },
   { value: "4", label: "4+ BHK" },
+] as const;
+
+/**
+ * Renting or buying — the question that splits the book in half.
+ *
+ * Same two words as `properties.listing_type`, so a lead's answer and a
+ * listing's answer are comparable without a translation step.
+ */
+export const LISTING_TYPES = [
+  { value: "rent", label: "Rent" },
+  { value: "outright", label: "Outright" },
 ] as const;
 
 export type Property = {

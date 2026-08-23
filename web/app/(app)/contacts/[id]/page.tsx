@@ -133,7 +133,25 @@ export default async function ContactDetail({
         </div>
 
         <dl className="mt-5 grid grid-cols-2 gap-4 border-t border-ink-line pt-4 lg:grid-cols-4">
-          <Detail label="Budget" value={budgetRange(contact.budget_min, contact.budget_max)} mono />
+          <Detail
+            label={
+              contact.listing_type_interest === "rent"
+                ? "Budget / month"
+                : "Budget"
+            }
+            value={budgetRange(contact.budget_min, contact.budget_max)}
+            mono
+          />
+          <Detail
+            label="Rent or buy"
+            value={
+              contact.listing_type_interest === "rent"
+                ? "Rent"
+                : contact.listing_type_interest === "outright"
+                  ? "Outright"
+                  : "—"
+            }
+          />
           <Detail
             label="Preferred areas"
             value={contact.preferred_locations?.join(", ") || "—"}

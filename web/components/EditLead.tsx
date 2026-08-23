@@ -3,9 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { BudgetSlider } from "@/components/BudgetSlider";
 import { ChipGroup, Sheet } from "@/components/Sheet";
-import { BHK_OPTIONS, STAGES } from "@/lib/types";
+import { money } from "@/lib/format";
+import { BHK_OPTIONS, LISTING_TYPES, STAGES } from "@/lib/types";
 import type { Contact } from "@/lib/types";
 
 const SOURCES = [
@@ -52,6 +52,7 @@ export function EditLead({ contact }: { contact: Contact }) {
     property_type_interest: contact.property_type_interest ?? "",
     buyer_type: contact.buyer_type ?? "",
     bhk: contact.bhk === null ? "" : String(contact.bhk),
+    listing_type_interest: contact.listing_type_interest ?? "",
     remarks: contact.remarks ?? "",
   });
 
@@ -81,6 +82,7 @@ export function EditLead({ contact }: { contact: Contact }) {
       property_type_interest: form.property_type_interest || null,
       buyer_type: form.buyer_type || null,
       bhk: form.bhk === "" ? null : Number(form.bhk),
+      listing_type_interest: form.listing_type_interest || null,
       remarks: form.remarks.trim() || null,
     };
 
@@ -147,17 +149,38 @@ export function EditLead({ contact }: { contact: Contact }) {
             options={STAGES.map((s) => ({ value: s.value, label: s.label }))}
           />
 
-          <BudgetSlider
-            min={form.budget_min}
-            max={form.budget_max}
-            onChange={({ min, max }) =>
-              setForm((f) => ({
-                ...f,
-                budget_min: min === null ? "" : String(min),
-                budget_max: max === null ? "" : String(max),
-              }))
-            }
+          <ChipGroup
+            label="Rent or buy"
+            options={LISTING_TYPES}
+            value={(form.listing_type_interest || null) as never}
+            onChange={(v) => set("listing_type_interest", v ?? "")}
+            allowClear
           />
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field
+              label={`Budget from (₹${form.listing_type_interest === "rent" ? "/month" : ""})`}
+              value={String(form.budget_min)}
+              onChange={(v) => set("budget_min", v)}
+              inputMode="numeric"
+              hint={
+                form.budget_min
+                  ? money(form.budget_min)
+                  : undefined
+              }
+            />
+            <Field
+              label={`Budget to (₹${form.listing_type_interest === "rent" ? "/month" : ""})`}
+              value={String(form.budget_max)}
+              onChange={(v) => set("budget_max", v)}
+              inputMode="numeric"
+              hint={
+                form.budget_max
+                  ? money(form.budget_max)
+                  : undefined
+              }
+            />
+          </div>
 
           <ChipGroup
             label="Size"

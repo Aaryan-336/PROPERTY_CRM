@@ -3,10 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { BudgetSlider } from "@/components/BudgetSlider";
+import { budgetRange } from "@/lib/format";
+
 import { ChipGroup } from "@/components/Sheet";
 import { Card } from "@/components/ui";
-import { BHK_OPTIONS } from "@/lib/types";
+import { BHK_OPTIONS, LISTING_TYPES } from "@/lib/types";
 import type { DuplicateCandidate } from "@/lib/types";
 
 const SOURCES = [
@@ -44,6 +45,7 @@ export function NewContactForm() {
   const [buyerType, setBuyerType] = useState<string | null>(null);
   const [propertyType, setPropertyType] = useState<string | null>(null);
   const [bhk, setBhk] = useState<string | null>(null);
+  const [listingType, setListingType] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [duplicates, setDuplicates] = useState<DuplicateCandidate[] | null>(null);
@@ -73,6 +75,7 @@ export function NewContactForm() {
         buyer_type: buyerType,
         property_type_interest: propertyType,
         bhk: bhk ? Number(bhk) : null,
+        listing_type_interest: listingType,
         remarks: form.remarks.trim() || null,
       }),
     }).catch(() => null);
@@ -203,17 +206,43 @@ export function NewContactForm() {
       </Card>
 
       <Card className="space-y-4 p-5">
-        <BudgetSlider
-          min={form.budget_min}
-          max={form.budget_max}
-          onChange={({ min, max }) =>
-            setForm((prev) => ({
-              ...prev,
-              budget_min: min === null ? "" : String(min),
-              budget_max: max === null ? "" : String(max),
-            }))
-          }
+        <ChipGroup
+          label="Rent or buy"
+          options={LISTING_TYPES}
+          value={listingType as never}
+          onChange={(v) => setListingType(v)}
+          allowClear
         />
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label={`Budget from (₹${listingType === "rent" ? "/month" : ""})`}>
+            <input
+              type="number"
+              inputMode="numeric"
+              value={form.budget_min}
+              onChange={(e) => set("budget_min", e.target.value)}
+              className={`${inputClass} tabular`}
+            />
+          </Field>
+          <Field label={`Budget to (₹${listingType === "rent" ? "/month" : ""})`}>
+            <input
+              type="number"
+              inputMode="numeric"
+              value={form.budget_max}
+              onChange={(e) => set("budget_max", e.target.value)}
+              className={`${inputClass} tabular`}
+            />
+          </Field>
+        </div>
+        {/* Typing 15000000 is easy to get wrong by a zero, and the mistake is
+            invisible until the matcher stops suggesting anything. Saying the
+            figure back in the words a broker uses is what catches it. */}
+        {(form.budget_min || form.budget_max) && (
+          <p className="tabular -mt-1 text-[11px] text-slate">
+            {budgetRange(form.budget_min || null, form.budget_max || null)}
+            {listingType === "rent" ? " per month" : ""}
+          </p>
+        )}
 
         <Field label="Preferred locations">
           <input

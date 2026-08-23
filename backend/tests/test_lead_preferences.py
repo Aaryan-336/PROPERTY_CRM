@@ -1,9 +1,12 @@
-"""Size, remarks, and filtering leads by what they can actually spend.
+"""Size, letting, remarks, and filtering leads by what they can actually spend.
 
-Three things the lead form gained, and one each of them has to keep doing:
+Four things the lead form gained, and one each of them has to keep doing:
 
 * ``bhk`` has to survive a round trip *and* reach the matcher, because a size
   the matcher ignores is a field that lies to the agent who filled it in.
+* ``listing_type_interest`` has to keep the two books apart. Rent and outright
+  prices are not the same kind of number -- one is monthly -- so a lead looking
+  to rent must never be shown a purchase price.
 * ``remarks`` has to survive a round trip and stay out of every role's way that
   should not be writing it.
 * The budget filter has to select on overlap rather than containment, and it
@@ -234,3 +237,88 @@ def test_size_reaches_the_matcher(client, owner_h, seeded):
             )
             db.commit()
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# Renting or buying
+# ---------------------------------------------------------------------------
+
+
+def test_letting_preference_round_trips(client, owner_h):
+    created = make_lead(client, owner_h, listing_type_interest="rent")
+    assert created["listing_type_interest"] == "rent"
+    assert (
+        client.get(f"/contacts/{created['id']}", headers=owner_h)
+        .json()["listing_type_interest"]
+        == "rent"
+    )
+
+
+def test_only_the_two_words_inventory_uses_are_accepted(client, owner_h):
+    resp = client.post(
+        "/contacts?force=true",
+        json={"first_name": "Pref", "last_name": MARK, "listing_type_interest": "lease"},
+        headers=owner_h,
+    )
+    assert resp.status_code == 422
+
+
+def test_letting_filter_separates_the_two_books(client, owner_h):
+    renter = make_lead(client, owner_h, listing_type_interest="rent")
+    buyer = make_lead(client, owner_h, listing_type_interest="outright")
+
+    found = ids_for(client, owner_h, "listing_type=rent")
+    assert renter["id"] in found
+    assert buyer["id"] not in found
+
+
+def test_a_renter_is_never_shown_a_purchase_price(client, owner_h, seeded):
+    """The prices are not even in the same units -- monthly against outright."""
+    from app.db import SessionLocal, system_scope
+    from app.models import Property
+
+    db = SessionLocal()
+    with system_scope():
+        rental = Property(
+            title="Rental Pref", location="Powai", listing_type="rent",
+            price=60_000, property_type="apartment",
+        )
+        sale = Property(
+            title="Sale Pref", location="Powai", listing_type="outright",
+            price=60_000, property_type="apartment",
+        )
+        db.add_all([rental, sale])
+        db.commit()
+        rental_id, sale_id = rental.id, sale.id
+
+    try:
+        lead = make_lead(
+            client,
+            owner_h,
+            listing_type_interest="rent",
+            budget_min=50_000,
+            budget_max=80_000,
+        )
+        matches = client.get(
+            f"/contacts/{lead['id']}/matches?limit=50", headers=owner_h
+        ).json()
+        ids = {m["property"]["id"] for m in matches}
+        assert rental_id in ids
+        assert sale_id not in ids
+    finally:
+        with system_scope():
+            db.query(Property).filter(Property.id.in_([rental_id, sale_id])).delete(
+                synchronize_session=False
+            )
+            db.commit()
+        db.close()
+
+
+def test_a_lead_who_has_not_said_still_sees_both(client, owner_h, seeded):
+    """No stated preference cannot count for or against either book."""
+    lead = make_lead(client, owner_h, budget_min=10_000_000, budget_max=20_000_000)
+    matches = client.get(
+        f"/contacts/{lead['id']}/matches?limit=50", headers=owner_h
+    ).json()
+    # The seeded fixture listing is an outright at 1.5Cr in Powai.
+    assert seeded["property_id"] in {m["property"]["id"] for m in matches}

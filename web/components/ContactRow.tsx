@@ -49,6 +49,7 @@ export function ContactRow({
               <>
                 {" · "}
                 {budgetRange(contact.budget_min, contact.budget_max)}
+                {contact.listing_type_interest === "rent" ? " /mo" : ""}
                 {contact.bhk
                   ? ` · ${contact.bhk >= 4 ? "4+" : contact.bhk} BHK`
                   : ""}

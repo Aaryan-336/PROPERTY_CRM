@@ -210,6 +210,13 @@ def contact_matches(
             )
         )
 
+    # Renting and buying are two different books, and their prices are not even
+    # in the same units -- a monthly figure against a purchase price. No NULL
+    # allowance here, unlike size: properties.listing_type is NOT NULL, so a
+    # listing always has an answer and a mismatch is a real mismatch.
+    if contact.listing_type_interest:
+        stmt = stmt.where(Property.listing_type == contact.listing_type_interest)
+
     # Size is the first question every buyer answers, so a lead who said 2BHK
     # should not be shown 4BHKs. Listings that never stated a size stay in --
     # a WhatsApp forward with no bedroom count is still worth a look -- and 4
@@ -282,6 +289,11 @@ def contact_matches(
         if contact.bhk and prop.bhk:
             score += 0.15
             reasons.append(f"{prop.bhk}BHK as requested")
+
+        if contact.listing_type_interest:
+            reasons.append(
+                "For rent" if prop.listing_type == "rent" else "Outright sale"
+            )
 
         # Freshness: a listing seen in the last week is far more likely to
         # still be available than one nobody has mentioned in a month.
