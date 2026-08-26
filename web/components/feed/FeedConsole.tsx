@@ -335,17 +335,22 @@ export function FeedConsole({
                           {message.listings_new === 0 && " (all reposts)"}
                         </span>
                       )}
-                      {message.status === "failed" && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            call(`whatsapp/reprocess/${message.id}`, "POST")
-                          }
-                          className="font-semibold text-sandstone-deep"
-                        >
-                          · Retry
-                        </button>
-                      )}
+                      {/* Offered on every message, not just failed ones.
+                          Storing raw bodies before parsing exists precisely so
+                          an improved prompt can be replayed over history — and
+                          the messages that most need replaying are the ones
+                          that "succeeded" and got it wrong, which by definition
+                          never reach the failed state. */}
+                      <button
+                        type="button"
+                        disabled={busyId !== null}
+                        onClick={() =>
+                          call(`whatsapp/reprocess/${message.id}`, "POST")
+                        }
+                        className="font-semibold text-sandstone-deep disabled:opacity-50"
+                      >
+                        · {message.status === "failed" ? "Retry" : "Re-extract"}
+                      </button>
                     </div>
                     {message.error && (
                       <p className="mt-1 truncate text-[11px] text-signal">
