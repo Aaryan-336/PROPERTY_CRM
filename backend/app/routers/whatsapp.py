@@ -26,7 +26,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, Query, Request
-from sqlalchemy import func, select, update
+from sqlalchemy import and_, func, or_, select, update
 
 from app.config import settings
 from app.db import system_scope
@@ -34,6 +34,7 @@ from app.deps import PageDep, PrincipalDep, ScopedDep, SessionDep, require
 from app.errors import ApiError, bad_request, forbidden, not_found
 from app.extraction import Extractor
 from app.heartbeat import is_live
+from app.ingestion import STALLED_CLAIM_AFTER
 from app.models import (
     EXTRACTION_WORKER,
     INGEST_DUPLICATE,
@@ -431,6 +432,15 @@ def ingestion_status(scoped: ScopedDep, db: SessionDep) -> IngestionStatus:
         groups_total=len(groups),
         pending=count(messages.where(WhatsAppMessage.status == INGEST_PENDING)),
         processing=count(messages.where(WhatsAppMessage.status == INGEST_PROCESSING)),
+        stalled=count(
+            messages.where(WhatsAppMessage.status == INGEST_PROCESSING).where(
+                or_(
+                    WhatsAppMessage.claimed_at.is_(None),
+                    WhatsAppMessage.claimed_at
+                    < datetime.now(timezone.utc) - STALLED_CLAIM_AFTER,
+                )
+            )
+        ),
         failed_last_24h=count(
             messages.where(WhatsAppMessage.status == INGEST_FAILED).where(
                 WhatsAppMessage.received_at >= since
@@ -631,17 +641,35 @@ def reprocess_failed(scoped: ScopedDep, db: SessionDep, request: Request) -> dic
     — so the fix lands and the backlog is still sitting there, one button press
     per message.
 
-    Only `failed` rows. A message still `pending` has attempts left and the
-    worker will pick it up on its own; resetting those would hide a genuine
-    retry loop rather than help it.
+    Two states qualify. `failed` is the obvious one. The other is a message
+    stranded in `processing` by a worker that died mid-batch — normally the
+    worker reclaims those itself, but if no worker is running at all then
+    nothing does, and that is precisely when someone is pressing this button.
+
+    A `pending` message is left alone: it still has attempts and the worker
+    will reach it, and resetting it would hide a genuine retry loop rather than
+    help it. So is a *recent* claim, which is a batch in flight, not a corpse.
     """
+    stale = datetime.now(timezone.utc) - STALLED_CLAIM_AFTER
+
     # Through ScopedQuery like every other read here, not system_scope: this
     # runs on behalf of a signed-in person, and the one exemption in this file
     # is the gateway webhook, which has no person behind it.
     ids = [
         m.id
         for m in db.execute(
-            scoped.whatsapp_messages().where(WhatsAppMessage.status == INGEST_FAILED)
+            scoped.whatsapp_messages().where(
+                or_(
+                    WhatsAppMessage.status == INGEST_FAILED,
+                    and_(
+                        WhatsAppMessage.status == INGEST_PROCESSING,
+                        or_(
+                            WhatsAppMessage.claimed_at.is_(None),
+                            WhatsAppMessage.claimed_at < stale,
+                        ),
+                    ),
+                )
+            )
         )
         .scalars()
         .all()
@@ -653,7 +681,7 @@ def reprocess_failed(scoped: ScopedDep, db: SessionDep, request: Request) -> dic
         db.execute(
             update(WhatsAppMessage)
             .where(WhatsAppMessage.id.in_(ids))
-            .values(status=INGEST_PENDING, attempts=0, error=None)
+            .values(status=INGEST_PENDING, attempts=0, claimed_at=None, error=None)
             .execution_options(synchronize_session=False)
         )
         db.commit()

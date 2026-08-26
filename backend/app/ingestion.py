@@ -23,10 +23,11 @@ three orphans behind.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session as DbSession
 
 from app.db import system_scope
@@ -77,6 +78,46 @@ log = logging.getLogger("balaji.ingestion")
 # across many messages, small enough that one failure does not strand a big
 # chunk of the backlog and that the response stays well inside max_tokens.
 BATCH_SIZE = 8
+
+
+# Words that make a message worth a model call even with no digits in it.
+# Deliberately generous: the cost of keeping a non-listing is one entry in a
+# batch, and the cost of dropping a listing is a flat the firm never sees.
+_LISTING_WORDS = (
+    "bhk", "rk", "flat", "apartment", "shop", "office", "villa", "plot",
+    "rent", "lease", "sale", "sell", "resale", "buy", "available", "avl",
+    "carpet", "sqft", "sq ft", "furnish", "deposit", "dep", "tenant",
+    "possession", "society", "tower", "wing", "floor",
+)
+
+# Anchored at the start of a word, open at the end. The leading boundary is not
+# optional: matching "lease" anywhere inside a message classifies "please share
+# the photos" as inventory. The trailing end is left open on purpose, so
+# "flats", "furnished" and "deposit" all match their stems.
+_LISTING_RE = re.compile(r"\b(?:" + "|".join(_LISTING_WORDS) + r")", re.IGNORECASE)
+
+
+def is_obvious_chatter(body: str) -> bool:
+    """True for messages no model needs to see.
+
+    Broker groups are mostly not inventory -- good mornings, festival wishes,
+    "thanks bhai", a thumbs up. Every one of those used to cost a slot in a
+    batch and a slice of the token allowance, which on a rate-limited tier is
+    throughput taken directly from the messages that *are* listings.
+
+    The test is deliberately timid, because the asymmetry is brutal: a dropped
+    listing is a flat the firm never sees, while a kept non-listing costs
+    almost nothing. So a message is skipped only when it is short, contains no
+    digit anywhere -- no price, no size, no phone number, no floor -- and uses
+    none of the vocabulary of inventory. "Good morning all 🙏" goes; anything
+    that could conceivably be a flat stays.
+    """
+    text = body.strip().lower()
+    if len(text) > 120:
+        return False
+    if any(character.isdigit() for character in text):
+        return False
+    return _LISTING_RE.search(text) is None
 
 
 @dataclass
@@ -294,6 +335,7 @@ def process_message(
     """Apply one extraction result to one message, in the caller's transaction."""
     message.extraction = result.model_dump()
     message.processed_at = datetime.now(timezone.utc)
+    message.claimed_at = None
     message.error = None
 
     if not result.is_listing or not result.listings:
@@ -359,11 +401,73 @@ def claim_pending(db: DbSession, limit: int) -> list[WhatsAppMessage]:
             .all()
         )
         claimed = list(rows)
+        now = datetime.now(timezone.utc)
         for message in claimed:
             message.status = INGEST_PROCESSING
             message.attempts = (message.attempts or 0) + 1
+            message.claimed_at = now
     db.commit()
     return claimed
+
+
+# How long a claim may sit before it is assumed dead.
+#
+# Generous, because a slow batch is still a live one: on a free model tier a
+# batch that gets rate-limited retries with a long backoff, and reclaiming it
+# mid-flight would double the work and could double-create inventory.
+STALLED_CLAIM_AFTER = timedelta(minutes=15)
+
+
+def reclaim_stalled(db: DbSession, older_than: timedelta = STALLED_CLAIM_AFTER) -> int:
+    """Return claims whose worker never came back to the queue.
+
+    Nothing did this, and the gap was invisible in the worst way: a claimed row
+    is `processing`, `claim_pending` only looks at `pending`, and the owner's
+    "retry failed" only looks at `failed`. A message whose worker died mid-batch
+    was reachable by neither and sat on "Extracting" for ever.
+
+    That is not an edge case on the free plan, where the extraction loop runs
+    inside an API that suspends after about fifteen minutes without traffic --
+    it dies mid-batch most days.
+
+    The attempt taken by the claim is given back. `attempts` exists to stop one
+    malformed message being re-sent to the model for ever, and a host suspending
+    is not the message's fault; charging it would fail perfectly good messages
+    after three deploys. The timeout is what bounds this instead — a message
+    that genuinely kills its worker can only cost one attempt per fifteen
+    minutes, which is slow enough to notice and cheap enough to survive.
+    """
+    cutoff = datetime.now(timezone.utc) - older_than
+    with system_scope():
+        ids = [
+            row[0]
+            for row in db.execute(
+                select(WhatsAppMessage.id)
+                .where(WhatsAppMessage.status == INGEST_PROCESSING)
+                .where(
+                    or_(
+                        WhatsAppMessage.claimed_at.is_(None),
+                        WhatsAppMessage.claimed_at < cutoff,
+                    )
+                )
+            )
+        ]
+        if not ids:
+            return 0
+        db.execute(
+            update(WhatsAppMessage)
+            .where(WhatsAppMessage.id.in_(ids))
+            .values(
+                status=INGEST_PENDING,
+                claimed_at=None,
+                attempts=func.greatest(WhatsAppMessage.attempts - 1, 0),
+                error="Requeued: the extractor stopped before finishing this batch.",
+            )
+            .execution_options(synchronize_session=False)
+        )
+        db.commit()
+    log.warning("reclaimed %d message(s) stalled in extraction", len(ids))
+    return len(ids)
 
 
 def _groups_for(db: DbSession, messages: list[WhatsAppMessage]) -> dict[int, WhatsAppGroup]:
@@ -382,8 +486,27 @@ def run_batch(
 ) -> IngestionStats:
     """Claim, extract and apply one batch. Returns what happened."""
     stats = IngestionStats()
-    messages = claim_pending(db, limit)
+    claimed = claim_pending(db, limit)
+    if not claimed:
+        return stats
+
+    # Settle the obvious ones here rather than paying a model call for them.
+    # In these groups most traffic is not inventory, and on a rate-limited tier
+    # every greeting in a batch is throughput taken from a real listing.
+    messages = []
+    for message in claimed:
+        if is_obvious_chatter(message.body):
+            message.status = INGEST_NOT_LISTING
+            message.claimed_at = None
+            message.processed_at = datetime.now(timezone.utc)
+            message.error = None
+            stats.not_listings += 1
+            stats.messages_processed += 1
+        else:
+            messages.append(message)
+
     if not messages:
+        db.commit()
         return stats
 
     groups = _groups_for(db, messages)
@@ -449,7 +572,7 @@ def _release(db: DbSession, messages: list[WhatsAppMessage], error: str) -> None
         db.execute(
             update(WhatsAppMessage)
             .where(WhatsAppMessage.id.in_(ids))
-            .values(status=INGEST_PENDING, error=error[:1000])
+            .values(status=INGEST_PENDING, claimed_at=None, error=error[:1000])
             .execution_options(synchronize_session=False)
         )
         # Second pass rather than a CASE: a message only exhausts its retries
@@ -479,6 +602,7 @@ def _mark_failed(
                     if attempts >= MAX_EXTRACTION_ATTEMPTS
                     else INGEST_PENDING
                 ),
+                claimed_at=None,
                 error=error[:1000],
             )
             .execution_options(synchronize_session=False)

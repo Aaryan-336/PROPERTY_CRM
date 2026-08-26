@@ -732,6 +732,10 @@ class WhatsAppMessage(Base):
         Text, nullable=False, default=INGEST_PENDING
     )
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # When a worker took this message. Set on claim, cleared on release, and
+    # the only thing that distinguishes a message being extracted right now
+    # from one whose worker died mid-batch and is never coming back.
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(Text)
     # The extractor's raw structured output, kept for debugging and for the
     # owner's review screen -- so "why did it think this was a 3BHK" is
@@ -746,6 +750,13 @@ class WhatsAppMessage(Base):
         # The worker's claim query: oldest pending first, so a backlog drains
         # in the order it arrived.
         Index("idx_whatsapp_messages_queue", "status", "received_at"),
+        # Reclaiming stalled claims. Partial, because `processing` is a
+        # handful of rows at any moment and the table is not.
+        Index(
+            "idx_whatsapp_messages_claimed",
+            "claimed_at",
+            postgresql_where=text("status = 'processing'"),
+        ),
         Index("idx_whatsapp_messages_group", "group_id", received_at.desc()),
     )
 

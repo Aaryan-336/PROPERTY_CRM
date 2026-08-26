@@ -925,6 +925,10 @@ class IngestionStatus(BaseModel):
     groups_total: int
     pending: int
     processing: int
+    # Claims old enough that their worker is not coming back. Distinct from
+    # `processing`, which includes batches legitimately in flight — the screen
+    # must not call a working extractor stuck.
+    stalled: int = 0
     failed_last_24h: int
     messages_last_24h: int
     listings_last_24h: int

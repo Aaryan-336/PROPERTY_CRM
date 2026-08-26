@@ -104,9 +104,37 @@ whichever process it runs in, and the Inventory feed reads it back:
 - *"N messages are queued"* with the process named — a loop **is** running and
   is working through a backlog. Slow, not stuck.
 
+- *"N messages stuck on extracting"* — a worker claimed them and stopped before
+  finishing. On the free plan the API suspends after about fifteen minutes
+  without traffic, which kills the in-process extractor mid-batch, so this is
+  routine rather than exceptional. A running worker reclaims them within a
+  minute; the **Requeue** button does it when none is running.
+
 Queued messages are never lost while this is being sorted out: whenever an
 extractor does start, it claims the whole backlog from `pending` and drains it.
-There is nothing to replay by hand. It is the same loop, claiming work with
+There is nothing to replay by hand.
+
+### Extraction throughput
+
+The ceiling is the model tier, not this code. Measured against Groq's free
+tier with `openai/gpt-oss-120b`: the system prompt and JSON schema cost roughly
+1,900 input tokens per request before a single message is added, and Groq bills
+*reserved* completion tokens against the same per-minute allowance. A free
+account gets 8,000 tokens a minute, so a full batch of eight does not fit and
+is split — landing at roughly one or two requests a minute.
+
+**That is not enough for live group traffic.** If the feed needs to keep up in
+real time, a paid Groq tier is the lever; nothing on this side substitutes for
+it. What this side does do:
+
+- Obvious chatter — short, digit-free, no listing vocabulary — is settled
+  without a model call at all. In broker groups that is a large share of the
+  traffic, and on a rate-limited tier every greeting in a batch is throughput
+  taken from a real listing.
+- The queue is polled every two seconds when idle, so a message that arrives
+  during a quiet spell is not sitting for five.
+- Stalled claims are reclaimed once a minute, so the queue cannot silently
+  stop moving. It is the same loop, claiming work with
 `SELECT ... FOR UPDATE SKIP LOCKED`, so it is safe to run alongside a real
 worker later — and safe to switch off once you have one.
 

@@ -172,6 +172,9 @@ export type IngestionStatus = {
   groups_total: number;
   pending: number;
   processing: number;
+  // Claims whose worker is not coming back — distinct from `processing`,
+  // which includes batches legitimately in flight.
+  stalled: number;
   failed_last_24h: number;
   messages_last_24h: number;
   listings_last_24h: number;

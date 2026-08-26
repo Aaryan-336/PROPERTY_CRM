@@ -31,19 +31,34 @@ from types import FrameType
 from app.db import SessionLocal, system_scope
 from app.extraction import Extractor, ExtractionInput, ExtractionUnavailable
 from app.heartbeat import describe_process, touch
-from app.ingestion import BATCH_SIZE, IngestionStats, pending_count, run_batch
+from app.ingestion import (
+    BATCH_SIZE,
+    IngestionStats,
+    pending_count,
+    reclaim_stalled,
+    run_batch,
+)
 from app.models import EXTRACTION_WORKER, INGEST_PENDING, WhatsAppMessage
 
 log = logging.getLogger("balaji.worker")
 
-# How long to wait when the queue is empty. Group traffic is bursty and nothing
-# here is latency-critical -- a listing that reaches inventory five seconds
-# later is indistinguishable to an agent searching it.
-IDLE_SLEEP_SECONDS = 5.0
+# How long to wait when the queue is empty.
+#
+# This is the floor on how stale the feed can be: a message that arrives just
+# after a poll waits this long before anything looks at it. Group traffic is
+# bursty and an agent watching the feed notices seconds, so it is short. It
+# costs one trivial indexed query per interval against a queue that is empty
+# almost all the time.
+IDLE_SLEEP_SECONDS = 2.0
 
 # Backoff after a failed batch, so an API outage does not turn into a tight
 # retry loop against a service that is already unhappy.
 ERROR_SLEEP_SECONDS = 30.0
+
+# How often to look for claims whose worker died. Nothing can become stalled
+# faster than ingestion.STALLED_CLAIM_AFTER, so this only has to be comfortably
+# under it.
+RECLAIM_EVERY_SECONDS = 60.0
 
 _shutdown = False
 
@@ -74,6 +89,10 @@ def request_worker_shutdown() -> None:
 def run_forever(extractor: Extractor, batch_size: int, kind: str = "standalone") -> None:
     totals = IngestionStats()
     note = describe_process(kind)
+    # Far enough in the past that the first pass always checks: on the free
+    # plan this process is restarted constantly, and each restart is exactly
+    # when a claim was most likely orphaned.
+    last_reclaim = float("-inf")
     while not _shutdown:
         db = SessionLocal()
         try:
@@ -82,6 +101,18 @@ def run_forever(extractor: Extractor, batch_size: int, kind: str = "standalone")
             # report it as dead at exactly the moment someone is looking to
             # find out why nothing is moving.
             touch(db, EXTRACTION_WORKER, note)
+            # Claims whose worker never came back. It has to run somewhere: a
+            # message stuck in `processing` is invisible to both the queue and
+            # the owner's retry button, so nothing else would ever free it.
+            #
+            # Not every pass. The loop spins every couple of seconds when the
+            # queue is empty, and nothing can become stalled in less than the
+            # timeout, so checking that often is pure noise against the
+            # database.
+            now = time.monotonic()
+            if now - last_reclaim >= RECLAIM_EVERY_SECONDS:
+                last_reclaim = now
+                reclaim_stalled(db)
             stats = run_batch(db, extractor, limit=batch_size)
         except Exception:
             log.exception("worker loop error")

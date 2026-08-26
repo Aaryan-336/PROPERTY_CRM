@@ -179,6 +179,31 @@ export function FeedConsole({
         </Banner>
       )}
 
+      {status.stalled > 0 && (
+        <Banner tone="warning">
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-2">
+            <span>
+              <strong>
+                {status.stalled} message{status.stalled === 1 ? "" : "s"} stuck on
+                extracting.
+              </strong>{" "}
+              A worker took {status.stalled === 1 ? "it" : "them"} and stopped
+              before finishing — usually the free plan suspending the API. A
+              running worker frees these on its own; if none is running, this
+              does it now.
+            </span>
+            <button
+              type="button"
+              disabled={busyId !== null}
+              onClick={() => call("whatsapp/reprocess-failed", "POST")}
+              className="tap rounded-pill bg-ink px-4 text-xs font-semibold text-white disabled:opacity-50"
+            >
+              Requeue
+            </button>
+          </span>
+        </Banner>
+      )}
+
       {status.failed_last_24h > 0 && (
         <Banner tone="signal">
           <span className="flex flex-wrap items-center gap-x-2 gap-y-2">

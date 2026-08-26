@@ -768,7 +768,10 @@ def test_message_stops_retrying_after_the_attempt_cap(group):
         def extract(self, items):
             raise RuntimeError("still broken")
 
-    body = "pipeline-poison: unparseable forever"
+    # Has to look like inventory, or the chatter prefilter settles it without
+    # ever reaching the extractor -- which is correct behaviour, and not what
+    # this test is about.
+    body = "pipeline-poison: 2bhk poison tower 1.5cr unparseable forever"
     message_id = _queue_message(group["id"], body, "pipe-poison-1")
 
     for _ in range(MAX_EXTRACTION_ATTEMPTS):
@@ -895,3 +898,187 @@ def test_requeueing_nothing_is_not_an_error(client, owner_h):
     resp = client.post("/whatsapp/reprocess-failed", headers=owner_h)
     assert resp.status_code == 200
     assert resp.json()["requeued"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Claims whose worker never came back
+# ---------------------------------------------------------------------------
+
+
+def _claim_state(message_id: int) -> tuple[str, int, object]:
+    from app.db import SessionLocal, system_scope
+    from app.models import WhatsAppMessage
+
+    db = SessionLocal()
+    with system_scope():
+        row = db.get(WhatsAppMessage, message_id)
+        out = (row.status, row.attempts, row.claimed_at)
+    db.close()
+    return out
+
+
+def _strand(message_id: int, age: timedelta) -> None:
+    """Put a message where a dead worker leaves one."""
+    from app.db import SessionLocal, system_scope
+    from app.models import WhatsAppMessage
+
+    db = SessionLocal()
+    with system_scope():
+        row = db.get(WhatsAppMessage, message_id)
+        row.status = "processing"
+        row.attempts = 1
+        row.claimed_at = datetime.now(timezone.utc) - age
+        db.commit()
+    db.close()
+
+
+def test_claiming_records_when_it_happened(group):
+    """Without this there is nothing to tell a live batch from a corpse."""
+    from app.db import SessionLocal
+    from app.ingestion import claim_pending
+
+    message_id = _queue_message(group["id"], "claim-stamp: 2bhk andheri 55k", "claim-1")
+    db = SessionLocal()
+    claim_pending(db, 10)
+    db.close()
+
+    status, _, claimed_at = _claim_state(message_id)
+    assert status == "processing"
+    assert claimed_at is not None
+
+
+def test_a_stalled_claim_is_returned_to_the_queue(group):
+    """The bug: `claim_pending` looks only at `pending` and the owner's retry
+    only at `failed`, so a `processing` row was reachable by neither and sat on
+    "Extracting" for ever."""
+    from app.db import SessionLocal
+    from app.ingestion import STALLED_CLAIM_AFTER, reclaim_stalled
+
+    message_id = _queue_message(group["id"], "stalled: 3bhk powai 1.2cr", "stall-1")
+    _strand(message_id, STALLED_CLAIM_AFTER + timedelta(minutes=5))
+
+    db = SessionLocal()
+    assert reclaim_stalled(db) >= 1
+    db.close()
+
+    status, attempts, claimed_at = _claim_state(message_id)
+    assert status == "pending"
+    assert claimed_at is None
+    # The attempt is given back. A host suspending mid-batch is not the
+    # message's fault, and charging it would fail good messages after three
+    # deploys — which on the free plan happens in a week.
+    assert attempts == 0
+
+
+def test_a_batch_in_flight_is_left_alone(group):
+    """Reclaiming a live claim would double the work and could double-create
+    inventory."""
+    from app.db import SessionLocal
+    from app.ingestion import reclaim_stalled
+
+    message_id = _queue_message(group["id"], "inflight: 2bhk malad 48k", "inflight-1")
+    _strand(message_id, timedelta(seconds=30))
+
+    db = SessionLocal()
+    reclaim_stalled(db)
+    db.close()
+
+    assert _claim_state(message_id)[0] == "processing"
+
+
+def test_finishing_a_message_clears_its_claim(group):
+    """Otherwise every finished message looks like a claim in flight."""
+    body = "clears-claim: 2bhk claim tower goregaon 62k"
+    message_id = _queue_message(group["id"], body, "clearclaim-1")
+    _run(StubExtractor({body: MessageExtraction(
+        message_ref="", is_listing=True, reason="listing",
+        listings=[_listing(building="Claim Tower", location="Goregaon East",
+                           price="62k")])}))
+
+    status, _, claimed_at = _claim_state(message_id)
+    assert status in ("extracted", "duplicate")
+    assert claimed_at is None
+
+
+def test_the_owner_can_free_stranded_claims_when_no_worker_is_running(
+    client, owner_h, group
+):
+    """The automatic reclaim lives in the worker. If no worker is running at
+    all then nothing reclaims — and that is exactly when someone presses this."""
+    from app.ingestion import STALLED_CLAIM_AFTER
+
+    stuck = _queue_message(group["id"], "owner-frees: 1bhk vasai 18k", "ownerfree-1")
+    live = _queue_message(group["id"], "owner-leaves: 1bhk virar 15k", "ownerfree-2")
+    _strand(stuck, STALLED_CLAIM_AFTER + timedelta(minutes=1))
+    _strand(live, timedelta(seconds=10))
+
+    resp = client.post("/whatsapp/reprocess-failed", headers=owner_h)
+    assert resp.status_code == 200, resp.text
+
+    assert _claim_state(stuck)[0] == "pending"
+    assert _claim_state(live)[0] == "processing", "a live batch must not be disturbed"
+
+
+# ---------------------------------------------------------------------------
+# Not paying a model call for "good morning"
+# ---------------------------------------------------------------------------
+
+
+def test_chatter_is_settled_without_calling_the_model(group):
+    """Most group traffic is not inventory, and on a rate-limited tier every
+    greeting in a batch is throughput taken from a real listing."""
+
+    class Watcher:
+        """Records what it was asked to read.
+
+        Not a stub that refuses to be called: a batch legitimately contains
+        whatever else is pending, so the assertion has to be about *this*
+        message never reaching the model, not about the model being idle.
+        """
+
+        def __init__(self) -> None:
+            self.seen: list[str] = []
+
+        def extract(self, items):
+            self.seen.extend(item.ref for item in items)
+            return [
+                MessageExtraction(
+                    message_ref=item.ref,
+                    is_listing=False,
+                    reason="not inventory",
+                    listings=[],
+                )
+                for item in items
+            ]
+
+    message_id = _queue_message(group["id"], "Good morning all", "chatter-1")
+    watcher = Watcher()
+    _run(watcher)
+
+    assert str(message_id) not in watcher.seen
+    assert _get_message(message_id)["status"] == "not_listing"
+
+
+def test_anything_that_could_be_a_flat_still_reaches_the_model(group):
+    """The asymmetry is brutal: a dropped listing is a flat the firm never
+    sees, a kept non-listing costs one slot in a batch."""
+    from app.ingestion import is_obvious_chatter
+
+    for body in [
+        "is it still available",
+        "anyone has flat in andheri?",
+        "9876543210",
+        "2bhk",
+        "AVAILABLE FOR RENTAL FLAT",
+    ]:
+        assert is_obvious_chatter(body) is False, body
+
+    for body in ["Good morning all", "Thanks bhai", "please share the photos"]:
+        assert is_obvious_chatter(body) is True, body
+
+
+def test_a_long_message_is_never_treated_as_chatter(group):
+    """Length is the cheap guard: anything substantial gets read properly."""
+    from app.ingestion import is_obvious_chatter
+
+    assert is_obvious_chatter("hello " * 40) is False

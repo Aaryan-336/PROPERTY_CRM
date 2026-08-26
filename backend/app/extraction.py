@@ -217,15 +217,34 @@ earlier ("is it still available?", "share photos").
 - Loan, interiors, packers-and-movers, legal or other service advertisements.
 - Sold/rented-out announcements about a property no longer available.
 
-When in doubt, mark it false. A missed listing costs one flat; a false one \
-pollutes the inventory the whole firm searches.
+When in doubt about whether the message is inventory at all, mark it false. A \
+false listing pollutes the inventory the whole firm searches.
 
-## Multiple properties per message
+That caution applies to `is_listing` ONLY. Once a message *is* inventory, be \
+exhaustive: emit every flat in it. Dropping flats from a real listing message \
+is not caution, it is data loss.
 
-Brokers routinely post several flats in one message, often numbered or \
-separated by blank lines or dashes. Emit one entry per distinct property. If \
-the message lists the same flat's several configurations (e.g. "2BHK 1.1cr / \
-3BHK 1.6cr in same tower"), that is two properties.
+## Multiple properties per message — read this twice
+
+Most listing messages in these groups advertise SEVERAL flats, not one. A \
+broker posts their whole available stock in a single message. Emit ONE ENTRY \
+PER FLAT. Returning one entry for a message that listed nine flats loses eight \
+flats, and that is the single most damaging mistake you can make here.
+
+They are separated in every imaginable way, and you must handle all of them:
+- numbered: "1) ... 2) ... 3)" or "1. ... 2. ..."
+- bulleted, dashed, arrowed, or emoji-prefixed lines
+- separated by blank lines, dashes, or a row of underscores
+- simply one flat per line under a heading like "AVAILABLE RENTAL FLATS"
+- a single line listing configurations in one tower: "2BHK 1.1cr / 3BHK 1.6cr \
+in Oberoi Splendor" is TWO properties, not one
+
+A shared heading, locality, building, broker name or phone number at the top \
+or bottom of the message applies to every flat under it. Repeat those shared \
+values on each entry rather than emitting them once.
+
+Before you finish a message, count the flats it mentions and check you have \
+emitted that many entries.
 
 ## Extraction rules
 
