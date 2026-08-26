@@ -3,6 +3,7 @@ import Link from "next/link";
 import { FilterBar } from "@/components/FilterBar";
 import { Pagination } from "@/components/Pagination";
 import { PlusIcon } from "@/components/icons";
+import { RefreshInventory } from "@/components/RefreshInventory";
 import { Card, EmptyState, StatusPill, type Tone } from "@/components/ui";
 import { api, qs } from "@/lib/api";
 import { money, relativeTime, titleCase } from "@/lib/format";
@@ -49,6 +50,14 @@ export default async function PropertiesPage({
   );
 
   const canAdd = user?.role === "owner" || user?.role === "agent";
+  // Newest arrival on this page, so the header can say how current the list is
+  // rather than leaving "is this up to date?" unanswerable.
+  const newest =
+    properties.items
+      .map((p) => p.created_at)
+      .filter(Boolean)
+      .sort()
+      .at(-1) ?? null;
 
   return (
     <div>
@@ -57,17 +66,23 @@ export default async function PropertiesPage({
           <h1 className="font-display text-2xl leading-tight text-ink">Inventory</h1>
           <p className="tabular mt-0.5 text-sm text-slate">
             {properties.total} listings
+            {newest ? ` · newest ${relativeTime(newest)}` : ""}
           </p>
         </div>
-        {canAdd && (
-          <Link
-            href="/properties/new"
-            className="tap flex items-center gap-2 rounded-pill bg-ink px-4 text-sm font-semibold text-white"
-          >
-            <PlusIcon className="h-4 w-4" />
-            <span className="hidden sm:inline">Add listing</span>
-          </Link>
-        )}
+        <div className="flex items-center gap-2">
+          {/* Inventory arrives on its own from the WhatsApp feed, so a screen
+              left open falls behind with nothing on it saying so. */}
+          <RefreshInventory newest={newest} />
+          {canAdd && (
+            <Link
+              href="/properties/new"
+              className="tap flex items-center gap-2 rounded-pill bg-ink px-4 text-sm font-semibold text-white"
+            >
+              <PlusIcon className="h-4 w-4" />
+              <span className="hidden sm:inline">Add listing</span>
+            </Link>
+          )}
+        </div>
       </header>
 
       <FilterBar

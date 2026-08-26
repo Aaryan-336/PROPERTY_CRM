@@ -156,6 +156,22 @@ def infer_listing_type(listing: ExtractedListing) -> str | None:
     way most heuristics are not -- no one rents a flat for ₹1.2 crore a month
     and no one sells one for ₹85,000.
     """
+    # The model's answer, unless the listing contradicts itself.
+    #
+    # A pre-leased property is an investment for sale: the tenant and the rent
+    # are what is being bought. Models read the rent schedule, the lock-in and
+    # the escalation clause, and conclude "rent" -- while copying a title that
+    # says "Pre-Leased Shop - Outright" and an asking price in crores. That is
+    # not a judgement call to defer to, it is a flat contradiction, and the word
+    # "pre-leased" settles it.
+    #
+    # Narrow on purpose: only this marker overrides the model. A generic "sale"
+    # somewhere in a rental listing is ordinary noise and is left alone.
+    if listing.listing_type == "rent":
+        from_title = normalize_listing_type(listing.title)
+        if from_title == "outright":
+            return "outright"
+
     if listing.listing_type in ("rent", "outright"):
         return listing.listing_type
 

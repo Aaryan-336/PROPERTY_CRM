@@ -352,6 +352,48 @@ def test_cold_caller_cannot_create_listings(client, carol_h):
     assert resp.status_code == 403
 
 
+def _make_listing(client, headers) -> int:
+    resp = client.post(
+        "/properties",
+        headers=headers,
+        json={"location": "Kandivali West", "listing_type": "outright",
+              "price": 330_000_000, "title": "Delete-test pre-leased shop"},
+    )
+    assert resp.status_code in (200, 201), resp.text
+    return resp.json()["id"]
+
+
+def test_only_the_owner_can_delete_a_listing(client, owner_h, alice_h):
+    """Narrower than editing, and deliberately so.
+
+    Agents add and correct listings all day. Removing one is different in kind:
+    inventory arrives automatically from the feed and is shared by the whole
+    firm, so a deletion is not "my mistake, my row" -- it takes a flat out of
+    everyone's search, along with the sourcing history behind it.
+    """
+    listing_id = _make_listing(client, owner_h)
+
+    # The agent can still edit it -- this narrows deletion, not authorship.
+    assert client.patch(
+        f"/properties/{listing_id}", headers=alice_h, json={"price": 320_000_000}
+    ).status_code == 200
+    assert client.delete(f"/properties/{listing_id}", headers=alice_h).status_code == 403
+
+    assert client.delete(f"/properties/{listing_id}", headers=owner_h).status_code == 204
+    assert client.get(f"/properties/{listing_id}", headers=owner_h).status_code == 404
+
+
+def test_a_deleted_listing_leaves_the_inventory_list(client, owner_h):
+    listing_id = _make_listing(client, owner_h)
+    ids = lambda: [
+        p["id"] for p in client.get("/properties?limit=50", headers=owner_h).json()["items"]
+    ]
+    assert listing_id in ids()
+
+    client.delete(f"/properties/{listing_id}", headers=owner_h)
+    assert listing_id not in ids()
+
+
 def test_unauthenticated_requests_are_rejected(client):
     for path in ("/contacts", "/properties", "/call-queue", "/audit-log"):
         assert client.get(path).status_code == 401

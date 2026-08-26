@@ -375,11 +375,18 @@ def update_property(
     "/properties/{property_id}",
     status_code=204,
     response_model=None,
-    dependencies=[Depends(require("properties.write"))],
+    dependencies=[Depends(require("properties.delete"))],
 )
 def delete_property(
     property_id: int, scoped: ScopedDep, db: SessionDep, request: Request
 ) -> None:
+    """Soft delete. Owner only.
+
+    Soft, because the listing carries its own provenance: which brokers posted
+    it, in which groups, and the raw messages. Hard-deleting would destroy the
+    answer to "did we already see this flat" and let the next repost arrive as
+    new inventory.
+    """
     prop = db.execute(
         scoped.properties().where(Property.id == property_id)
     ).scalar_one_or_none()

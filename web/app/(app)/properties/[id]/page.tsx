@@ -12,6 +12,7 @@ import {
 } from "@/components/ui";
 import { ApiRequestError, api, apiOptional, qs } from "@/lib/api";
 import { money, relativeTime, titleCase } from "@/lib/format";
+import { DeleteProperty } from "@/components/DeleteProperty";
 import { EditProperty } from "@/components/EditProperty";
 import { getCurrentUser } from "@/lib/session";
 import type { Paged, Property, PropertySource, Showing } from "@/lib/types";
@@ -48,6 +49,9 @@ export default async function PropertyDetail({
   // properties.write is Owner and Agent; a cold caller may read inventory but
   // never change it, and the API enforces that regardless of this flag.
   const canEdit = canSeeShowings;
+  // properties.delete is Owner-only — narrower than properties.write, because
+  // removing shared inventory is not the same act as correcting it.
+  const canDelete = user?.role === "owner";
   const [showings, sources] = await Promise.all([
     canSeeShowings
       ? api<Paged<Showing>>(
@@ -141,6 +145,24 @@ export default async function PropertyDetail({
             showings={showings.items}
             hideAgent={user?.role !== "owner"}
           />
+        </Card>
+      )}
+
+      {/* Last on the page, and only for the Owner. Deleting shared inventory
+          is not a header action sitting a few pixels from Edit — which is the
+          button that fixes almost every reason someone reaches for this one. */}
+      {canDelete && (
+        <Card className="p-5">
+          <SectionHeading
+            title="Remove this listing"
+            hint="Owner only · it leaves everyone's inventory"
+          />
+          <div className="mt-3">
+            <DeleteProperty
+              propertyId={property.id}
+              title={property.title ?? property.building ?? property.location}
+            />
+          </div>
         </Card>
       )}
     </div>

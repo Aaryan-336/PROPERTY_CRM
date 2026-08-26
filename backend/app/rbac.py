@@ -34,6 +34,13 @@ CAPABILITIES: dict[str, frozenset[str]] = {
     "contacts.bulk_import": frozenset({ROLE_OWNER}),
     "contacts.reassign": frozenset({ROLE_OWNER}),
     "properties.write": frozenset({ROLE_OWNER, ROLE_AGENT}),
+    # Narrower than properties.write, and deliberately so. Agents add and
+    # correct listings all day; removing one is different in kind. Inventory
+    # arrives automatically from the feed and is shared by the whole firm, so a
+    # deletion is not "my mistake, my row" -- it takes a flat out of everyone's
+    # search, including the sourcing history behind it. Same reasoning as
+    # contacts.delete, which has always been Owner-only.
+    "properties.delete": frozenset({ROLE_OWNER}),
     "property_interests.write": frozenset({ROLE_OWNER, ROLE_AGENT}),
     "property_interests.read": frozenset({ROLE_OWNER, ROLE_AGENT}),
     "calls.log": frozenset({ROLE_OWNER, ROLE_AGENT, ROLE_COLD_CALLER}),

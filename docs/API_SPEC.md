@@ -49,6 +49,7 @@ Base: REST, JSON, JWT bearer auth. Every endpoint below is subject to the role s
 | POST | `/properties` | Manual listing creation |
 | GET | `/properties/{id}` | Detail, includes `property_interests` history |
 | PATCH | `/properties/{id}` | Update status/price/etc. |
+| DELETE | `/properties/{id}` | **Owner only** (`properties.delete`, narrower than `properties.write`). Soft delete — the listing keeps its provenance, so a later repost of the same flat is still recognised rather than arriving as new inventory. |
 | GET | `/properties/{id}/matches` | Suggested matching contacts for this property (Phase 2, not yet built) |
 | GET | `/contacts/{id}/matches` | **Built.** Suggested inventory for a lead, scored on preferred location, budget fit (10% headroom over `budget_max`), property type, size and freshness. A stated `bhk` on the lead excludes listings of a different size, but keeps listings that never stated one; a stated `listing_type_interest` excludes the other book outright, since rent and purchase prices are not the same kind of number. Each result carries the reasons it matched — an unexplained ranking does not get used. |
 | GET | `/properties/{id}/sources` | Provenance for a listing: every group/broker sighting, with the raw message. Readable by all roles. |

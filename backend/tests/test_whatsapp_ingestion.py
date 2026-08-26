@@ -1106,3 +1106,81 @@ def test_a_rate_limit_does_not_cost_the_message_an_attempt(group):
     row = _get_message(message_id)
     assert row["status"] == "pending", "must stay in the queue, not fail"
     assert row["attempts"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Pre-leased investments: sold, not let
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        # The whole point: these contain a rent word and mean the opposite.
+        ("Pre-Leased Shop – Outright", "outright"),
+        ("Pre-Leased Office", "outright"),
+        ("pre leased jodi shops", "outright"),
+        ("PreLeased Commercial", "outright"),
+        ("Pre-Rented Shop", "outright"),
+        ("PRE-LEASE INVESTMENT OPTIONS", "outright"),
+        # Ordinary lettings must be untouched by the above.
+        ("Available on rent", "rent"),
+        ("RESIDENTIAL LEASE LISTINGS", "rent"),
+        ("rental flat", "rent"),
+        ("2bhk for sale", "outright"),
+    ],
+)
+def test_pre_leased_reads_as_a_sale_not_a_letting(text, expected):
+    """"Pre-leased" describes an investment being sold with a tenant in place.
+
+    Read as a letting -- which it was, because the word contains "lease" and
+    the rent check ran first -- a "Pre-Leased Shop - Outright" asking ₹33 Cr
+    became a rental, and the sale price was then treated as a monthly figure
+    and corrected downwards to fit. ₹33 crore reached inventory as ₹33 thousand.
+    """
+    from app.listing_normalize import normalize_listing_type
+
+    assert normalize_listing_type(text) == expected
+
+
+def _preleased(**overrides):
+    from app.extraction import ExtractedListing
+
+    base = dict(
+        listing_type="rent", property_type="commercial",
+        location="Kandivali West", building="Blue Empress", bhk="",
+        price="₹33 Cr", area="5968", furnishing="", contact_name="",
+        contact_phone="", title="Pre-Leased Shop – Outright", confidence="high",
+    )
+    base.update(overrides)
+    return ExtractedListing(**base)
+
+
+def test_a_listing_that_contradicts_itself_is_settled_by_the_word_preleased():
+    """The model reads the rent schedule, the lock-in and the escalation clause
+    and concludes "rent", while copying a title that says Outright. That is not
+    a judgement call to defer to."""
+    from app.ingestion import infer_listing_type
+
+    assert infer_listing_type(_preleased()) == "outright"
+
+
+def test_an_ordinary_rental_is_not_overridden():
+    """The guard is narrow on purpose: only the pre-leased marker overrides."""
+    from app.ingestion import infer_listing_type
+
+    assert (
+        infer_listing_type(_preleased(title="2BHK on rent in Andheri", price="85k"))
+        == "rent"
+    )
+
+
+def test_a_preleased_asking_price_survives_as_crores():
+    """The regression in full: type, then price. Getting the type wrong is what
+    mangled the number, so the number is what proves the type was fixed."""
+    from app.ingestion import build_facts
+
+    facts = build_facts(_preleased())
+    assert facts is not None
+    assert facts.listing_type == "outright"
+    assert facts.price == 330_000_000, "₹33 Cr must not become ₹33 thousand"

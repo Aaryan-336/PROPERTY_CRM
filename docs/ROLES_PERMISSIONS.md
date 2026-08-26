@@ -20,6 +20,7 @@
 | Reassign lead ownership | ✅ | ✅ (own team) | ❌ (request only) | ❌ |
 | View all properties/inventory | ✅ | ✅ | ✅ | ❌ |
 | Add/edit property listings | ✅ | ✅ | ✅ | ❌ |
+| Delete a property listing | ✅ | ❌ | ❌ | ❌ |
 | View firm-wide activity feed | ✅ | Team only | ❌ (own activity only) | ❌ (own activity only) |
 | View "who showed what to whom" | ✅ | Team only | Own records only | ❌ |
 | View team performance dashboard | ✅ | Team only | ❌ | ❌ |

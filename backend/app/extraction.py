@@ -248,6 +248,35 @@ values on each entry rather than emitting them once.
 Before you finish a message, count the flats it mentions and check you have \
 emitted that many entries.
 
+## Pre-leased and pre-rented investments
+
+A message offering a "pre-leased", "pre-rented" or "tenanted" property is \
+selling the property, NOT letting it. `listing_type` is "outright". The tenant, \
+the rent, the lock-in and the escalation clause are what the buyer is buying -- \
+they describe the income, not the transaction.
+
+These messages are full of rent language and almost nothing else, so they are \
+easy to read backwards. In one:
+
+    Pre-Leased Shop - Outright
+    Tenant: Iron Course Gym
+    Rent: 10.50 Lac/month
+    Lock-in: 5 Years
+    Escalation: 12% every 3 years
+    Expected Price: 33 Cr
+
+`listing_type` is "outright" and `price` is "33 Cr". It is NOT "10.50 Lac".
+
+**`price` is always what a buyer pays to own the property.** Take it from \
+"Asking Price", "Expected Price", "Outright Price", "Price" or "Quoted". Never \
+put a monthly rent in `price` for one of these, however many times the message \
+says the word rent. A pre-leased listing that reaches inventory at its monthly \
+rent is off by two orders of magnitude and looks like a bargain that does not \
+exist.
+
+One message of these commonly holds a numbered list of eight or nine separate \
+investments. Every one is its own property.
+
 ## Extraction rules
 
 - Copy prices, areas and bedroom counts VERBATIM, including units and \

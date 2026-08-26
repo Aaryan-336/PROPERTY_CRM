@@ -362,6 +362,26 @@ def normalize_listing_type(text: str | None) -> str | None:
     if not text:
         return None
     lowered = _clean(str(text))
+
+    # Checked before the rent words, because it contains one and means the
+    # opposite. A "pre-leased" or "pre-rented" property is an *investment for
+    # sale*: the tenant and the rent are what is being bought, not what is
+    # being offered. Read as a letting, a "Pre-Leased Shop - Outright" asking
+    # 33 crore becomes a flat to rent, and the sale price is then read as a
+    # monthly figure and mangled to fit -- 33 crore arrived in inventory as
+    # 33 thousand.
+    # Separators collapsed first: posters write "Pre-Leased", "Pre Leased" and
+    # "preleased" interchangeably, and a hyphen is not a meaningful difference.
+    flat = re.sub(r"[^a-z0-9]+", " ", lowered)
+    if any(
+        token in flat
+        for token in (
+            "pre leased", "preleased", "pre lease", "prelease",
+            "pre rented", "prerented", "pre rent", "prerent",
+        )
+    ):
+        return "outright"
+
     if any(
         token in lowered
         for token in ("rent", "lease", "letting", "to let", "rental")
