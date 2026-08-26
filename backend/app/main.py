@@ -65,7 +65,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         else:
             thread = threading.Thread(
                 target=run_forever,
-                args=(extractor, BATCH_SIZE),
+                # Named, so the feed's heartbeat says which of the two possible
+                # extractors is the one that is alive.
+                args=(extractor, BATCH_SIZE, "in-api"),
                 name="extraction-worker",
                 daemon=True,
             )

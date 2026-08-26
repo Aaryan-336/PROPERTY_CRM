@@ -559,8 +559,52 @@ function startHealthServer() {
     .listen(config.port, () => log.info(`health server on :${config.port}`));
 }
 
+/**
+ * Say where the WhatsApp login is being kept, and whether one is already there.
+ *
+ * This is the difference between a gateway that reconnects silently after a
+ * restart and one that demands a fresh QR scan every time. Re-linking is the
+ * most account-flagging thing this process can do, and a host whose filesystem
+ * is wiped on deploy turns every routine restart into another link event --
+ * which is exactly how a number gets flagged, and it happens without a single
+ * error being printed.
+ *
+ * So the state is stated at boot rather than left to be discovered from the
+ * pairing screen weeks later.
+ */
+function reportSessionStorage() {
+  const dir = path.resolve(config.authDir);
+  const paired = fs.existsSync(path.join(dir, "creds.json"));
+
+  log.info(
+    `WhatsApp session directory: ${dir} (${paired ? "linked account found" : "no saved session — pairing will need a QR"})`,
+  );
+
+  // Render's own filesystem is ephemeral: anything under the project checkout
+  // is restored from the repo on each deploy, so a session written there is
+  // gone by the next restart. A mounted disk is somewhere else entirely, which
+  // is what makes this check reliable rather than a guess.
+  const onRender = Boolean(process.env.RENDER || process.env.RENDER_SERVICE_ID);
+  if (onRender && dir.startsWith("/opt/render/project/")) {
+    log.warn(
+      "This directory is wiped on every deploy and restart. Mount a disk and " +
+        "point WHATSAPP_AUTH_DIR at it, or the account is re-linked each time " +
+        "the service restarts — which is what gets a number flagged.",
+    );
+  }
+
+  const outbox = path.resolve(config.outboxFile);
+  if (onRender && outbox.startsWith("/opt/render/project/")) {
+    log.warn(
+      `Outbox ${outbox} is on an ephemeral filesystem; messages not yet ` +
+        "acknowledged by the API are lost on restart.",
+    );
+  }
+}
+
 async function main() {
   log.info(`gateway starting; API ${config.apiBase}`);
+  reportSessionStorage();
 
   if (!PAIR_ONLY && !LIST_GROUPS) {
     startHealthServer();

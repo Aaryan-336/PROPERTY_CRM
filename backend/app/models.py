@@ -788,3 +788,36 @@ class PropertySource(Base):
         UniqueConstraint("property_id", "message_id", name="uq_property_source"),
         Index("idx_property_sources_property", "property_id", seen_at.desc()),
     )
+
+
+# Name of the row the extraction loop keeps warm. A constant because two
+# processes write it and one reads it, and a typo would look exactly like a
+# worker that had stopped.
+EXTRACTION_WORKER = "extraction"
+
+
+class WorkerHeartbeat(Base):
+    """Proof that a background loop is alive, so the UI can stop guessing.
+
+    Extraction can run in its own service, in a thread inside the API, or in a
+    terminal on someone's laptop. The API can only see the second, which is why
+    the feed screen used to infer "the worker may not be running" from a queue
+    that had grown past twenty — a guess that is wrong in both directions. It
+    stays silent while a handful of messages sit unprocessed for a week, and it
+    accuses a perfectly healthy worker that is merely behind after a busy
+    morning.
+
+    The loop writes here instead. Absence of a recent beat is then a fact about
+    the deployment rather than an inference from its symptoms.
+
+    Not in ``db.GUARDED_MAPPERS``: it holds no one's data, so there is no
+    "whose is this?" for a scope filter to answer.
+    """
+
+    __tablename__ = "worker_heartbeats"
+
+    name: Mapped[str] = mapped_column(Text, primary_key=True)
+    seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    note: Mapped[str | None] = mapped_column(Text)

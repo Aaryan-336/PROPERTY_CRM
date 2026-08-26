@@ -5,10 +5,8 @@
 # docs/DEPLOYMENT.md); Render would happily host it, but Vercel is where the
 # App Router's caching and image handling are tuned.
 #
-# The WhatsApp *gateway* is deliberately NOT here. It holds a long-lived
-# WhatsApp Web session on disk, which needs a persistent disk (a paid Render
-# feature) and, more importantly, wants to sit somewhere the firm controls —
-# see the gateway section of docs/DEPLOYMENT.md.
+# The WhatsApp *gateway* is here too, but commented out and on a paid plan for
+# reasons worth reading before uncommenting it — see its section below.
 
 databases:
   - name: balaji-db
@@ -54,6 +52,15 @@ services:
         sync: false
       - key: GROQ_API_KEY
         sync: false
+      # Background Workers are not offered on Render's free plan, so on that
+      # plan the worker below cannot exist and nothing turns messages into
+      # listings — they arrive, sit as `pending`, and the feed shows a healthy
+      # connection producing no inventory. Set this to true and the same loop
+      # runs inside the API instead. Safe alongside a real worker: claiming
+      # uses SELECT ... FOR UPDATE SKIP LOCKED, so two extractors divide the
+      # queue rather than duplicate it.
+      - key: EXTRACTION_IN_API
+        value: "false"
       - key: SESSION_IDLE_DAYS
         value: "30"
       - key: SESSION_ABSOLUTE_DAYS
@@ -82,7 +89,70 @@ services:
       # an actionable message rather than silently failing every message.
       - key: GROQ_API_KEY
         sync: false
+      # Groq retires model names on a fairly short cycle and this one is
+      # already gone — pinning it made every extraction 404 while the feed
+      # reported a healthy connection. Check console.groq.com/docs/models when
+      # extraction starts failing; app/config.py holds the current default.
       - key: EXTRACTION_MODEL
-        value: llama-3.3-70b-versatile
+        value: openai/gpt-oss-120b
       - key: EXTRACTION_SCHEMA_MODE
         value: auto
+
+  # ------------------------------------------------ WhatsApp gateway
+  #
+  # Holds the WhatsApp Web session and forwards group messages to the ingest
+  # webhook. Read the trade-off before deploying this, because it is a real
+  # one:
+  #
+  #   * It drives a real WhatsApp account over an unofficial integration. Run
+  #     on an office machine, the blast radius of that is somewhere the firm
+  #     can see and unplug. Run here, it is on a third party's infrastructure
+  #     and the linked-device credential lives on their disk.
+  #   * Against that: a laptop is asleep, closed, or on a train, and every
+  #     message posted while the gateway is down is missed outright — it reads
+  #     live traffic and never history. An always-on host is the only thing
+  #     that actually fixes that.
+  #
+  # This is NOT free. A background worker is `starter`, and disks are a paid
+  # feature. The disk is what makes it safe to restart: without it the session
+  # is wiped on every deploy and the account is re-linked each time, which is
+  # the single most account-flagging thing this process can do.
+  - type: worker
+    name: balaji-whatsapp-gateway
+    runtime: node
+    plan: starter
+    rootDir: gateway
+    buildCommand: npm ci
+    startCommand: npm start
+    disk:
+      name: wa-session
+      # Deliberately outside /opt/render/project, which is restored from the
+      # repo on every deploy. The gateway checks this at boot and warns if the
+      # session directory is somewhere ephemeral.
+      mountPath: /var/whatsapp
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: "22.11.0"
+      # This directory IS the WhatsApp login — anyone who copies it can read
+      # every group the account is in.
+      - key: WHATSAPP_AUTH_DIR
+        value: /var/whatsapp/session
+      # Messages journalled here the moment they arrive, removed once the API
+      # acknowledges them. On the disk for the same reason: a restart mid-batch
+      # must not lose what had not been delivered yet.
+      - key: OUTBOX_FILE
+        value: /var/whatsapp/outbox.jsonl
+      # Copied from the API rather than set twice. A mismatch here is refused
+      # with a 403 on every request and looks identical, from the CRM, to a
+      # gateway that is not running at all.
+      - key: WHATSAPP_INGEST_SECRET
+        fromService:
+          type: web
+          name: balaji-api
+          envVarKey: WHATSAPP_INGEST_SECRET
+      # The API's public URL. Not derivable in a blueprint — `fromService` can
+      # yield a host or a port but not a URL — so it is filled in by hand once
+      # the API has a domain.
+      - key: API_BASE_URL
+        sync: false

@@ -30,8 +30,9 @@ from types import FrameType
 
 from app.db import SessionLocal, system_scope
 from app.extraction import Extractor, ExtractionInput, ExtractionUnavailable
+from app.heartbeat import describe_process, touch
 from app.ingestion import BATCH_SIZE, IngestionStats, pending_count, run_batch
-from app.models import INGEST_PENDING, WhatsAppMessage
+from app.models import EXTRACTION_WORKER, INGEST_PENDING, WhatsAppMessage
 
 log = logging.getLogger("balaji.worker")
 
@@ -70,11 +71,17 @@ def request_worker_shutdown() -> None:
     _shutdown = True
 
 
-def run_forever(extractor: Extractor, batch_size: int) -> None:
+def run_forever(extractor: Extractor, batch_size: int, kind: str = "standalone") -> None:
     totals = IngestionStats()
+    note = describe_process(kind)
     while not _shutdown:
         db = SessionLocal()
         try:
+            # Before the batch, not after: a worker stuck on a slow or hanging
+            # extraction call is still running, and going quiet mid-batch would
+            # report it as dead at exactly the moment someone is looking to
+            # find out why nothing is moving.
+            touch(db, EXTRACTION_WORKER, note)
             stats = run_batch(db, extractor, limit=batch_size)
         except Exception:
             log.exception("worker loop error")

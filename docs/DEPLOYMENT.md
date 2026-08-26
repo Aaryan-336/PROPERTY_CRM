@@ -93,7 +93,20 @@ command and the same `DATABASE_URL` / `GROQ_API_KEY`.
 turns messages into listings: the gateway delivers, the rows sit as `pending`,
 and the Inventory feed shows a healthy connection producing no inventory. On the
 free plan, set `EXTRACTION_IN_API=true` on the API service instead and the
-extraction loop runs inside it. It is the same loop, claiming work with
+extraction loop runs inside it.
+
+**How to tell which of these you have.** The extraction loop records a heartbeat
+whichever process it runs in, and the Inventory feed reads it back:
+
+- *"Extraction is not configured"* — no `GROQ_API_KEY`.
+- *"Nothing is reading the queue"* — the key is set and no loop is running.
+  Either the worker service does not exist, or `EXTRACTION_IN_API` is not set.
+- *"N messages are queued"* with the process named — a loop **is** running and
+  is working through a backlog. Slow, not stuck.
+
+Queued messages are never lost while this is being sorted out: whenever an
+extractor does start, it claims the whole backlog from `pending` and drains it.
+There is nothing to replay by hand. It is the same loop, claiming work with
 `SELECT ... FOR UPDATE SKIP LOCKED`, so it is safe to run alongside a real
 worker later — and safe to switch off once you have one.
 
@@ -315,11 +328,63 @@ not by the website.** If `npm start` is not running somewhere, no amount of
 pressing Connect will produce a code — the press is recorded and waits, and the
 screen says so.
 
-**If you do want it on Render:** add a `worker` service with `rootDir: gateway`,
-`startCommand: node src/index.js`, and a **disk mounted at
-`/opt/render/project/src/gateway/.wa-session`**. Pairing needs the QR from the
-logs — run `npm run pair` locally first and copy the session directory up, or
-scan from the Render log output on first boot.
+### Running it on Render instead
+
+An office machine is still the better default, but a laptop is asleep, closed,
+or on a train — and every message posted while the gateway is down is missed
+outright, because it reads live traffic and never history. If nobody is going to
+keep a machine awake, an always-on host is the honest answer.
+
+`render.yaml` now carries the service. It is **not free**: a Background Worker
+is `starter`, and the disk is a paid feature.
+
+| Setting | Value |
+|---|---|
+| Type | Background Worker |
+| Root Directory | `gateway` |
+| Runtime | Node |
+| Build Command | `npm ci` |
+| Start Command | `npm start` |
+| Disk | mount at `/var/whatsapp`, 1 GB |
+
+| Variable | Value |
+|---|---|
+| `NODE_VERSION` | `22.11.0` |
+| `WHATSAPP_AUTH_DIR` | `/var/whatsapp/session` |
+| `OUTBOX_FILE` | `/var/whatsapp/outbox.jsonl` |
+| `WHATSAPP_INGEST_SECRET` | The value on the API service, copied exactly |
+| `API_BASE_URL` | The API's public URL |
+
+**The disk is the whole point, and the two paths above are why.** Render
+restores everything under `/opt/render/project` from the repo on every deploy,
+so a session written there is gone by the next restart and the account is
+re-linked each time — which is the single most account-flagging thing this
+process can do. Mounting the disk somewhere else is what makes a restart
+invisible to WhatsApp. The gateway checks this at boot and says so:
+
+```
+WhatsApp session directory: /var/whatsapp/session (linked account found)
+```
+
+and, when it is wrong:
+
+```
+WARN: This directory is wiped on every deploy and restart. Mount a disk and
+point WHATSAPP_AUTH_DIR at it, or the account is re-linked each time the
+service restarts — which is what gets a number flagged.
+```
+
+**Pairing does not need the logs.** Once the worker is up, sign in as the owner
+→ **Inventory feed** → **Connect WhatsApp**, and the QR appears in the browser.
+The gateway polls for that button every four seconds and reports the code back
+through the API; the terminal QR is still printed, but only for whoever is
+diagnosing a deployment.
+
+What this buys you and what it costs: the connection survives reboots and
+nobody has to remember to start it, but the WhatsApp linked-device credential
+now lives on a third party's disk rather than on hardware the firm controls.
+That is a real trade, not a formality — `ARCHITECTURE.md` §5 isolates this
+service precisely because it is the one built on an unofficial integration.
 
 ---
 

@@ -33,7 +33,9 @@ from app.db import system_scope
 from app.deps import PageDep, PrincipalDep, ScopedDep, SessionDep, require
 from app.errors import ApiError, bad_request, forbidden, not_found
 from app.extraction import Extractor
+from app.heartbeat import is_live
 from app.models import (
+    EXTRACTION_WORKER,
     INGEST_DUPLICATE,
     INGEST_EXTRACTED,
     INGEST_FAILED,
@@ -45,6 +47,7 @@ from app.models import (
     WhatsAppGroupCandidate,
     WhatsAppMessage,
     WhatsAppSession,
+    WorkerHeartbeat,
 )
 from app.schemas import (
     DirectoryReport,
@@ -417,6 +420,12 @@ def ingestion_status(scoped: ScopedDep, db: SessionDep) -> IngestionStatus:
 
     props = scoped.properties().where(Property.source == "whatsapp_group")
 
+    # Not scoped, and deliberately not scopable: a heartbeat belongs to a
+    # process, not to a person, so there is no role filter that would mean
+    # anything here. `worker_heartbeats` is left out of GUARDED_MAPPERS for the
+    # same reason, which is why this is a plain get rather than system_scope().
+    beat = db.get(WorkerHeartbeat, EXTRACTION_WORKER)
+
     return IngestionStatus(
         groups_active=sum(1 for g in groups if g.is_active),
         groups_total=len(groups),
@@ -445,6 +454,9 @@ def ingestion_status(scoped: ScopedDep, db: SessionDep) -> IngestionStatus:
             select(func.max(message_rows.c.processed_at))
         ).scalar(),
         extraction_configured=Extractor().available,
+        extractor_running=is_live(beat.seen_at if beat else None),
+        extractor_seen_at=beat.seen_at if beat else None,
+        extractor_note=beat.note if beat else None,
     )
 
 

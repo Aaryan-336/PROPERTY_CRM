@@ -934,7 +934,22 @@ class IngestionStatus(BaseModel):
     last_message_at: datetime | None = None
     last_processed_at: datetime | None = None
     extraction_configured: bool = Field(
-        description="False when no Anthropic credentials are set; the queue will back up."
+        description="False when no GROQ_API_KEY is set; the queue will back up."
+    )
+    # Configured and running are different failures with the same symptom -- a
+    # queue that never drains -- and they have different fixes, so the screen
+    # has to be able to tell them apart.
+    extractor_running: bool = Field(
+        default=False,
+        description="Whether an extraction loop has reported in recently.",
+    )
+    extractor_seen_at: datetime | None = Field(
+        default=None,
+        description="When an extraction loop last reported in, anywhere.",
+    )
+    extractor_note: str | None = Field(
+        default=None,
+        description="Which process that was — host, pid, and where it runs.",
     )
 
 

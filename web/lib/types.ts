@@ -181,6 +181,11 @@ export type IngestionStatus = {
   last_message_at: string | null;
   last_processed_at: string | null;
   extraction_configured: boolean;
+  // Configured and running are separate failures with the same symptom — a
+  // queue that never drains — and different fixes.
+  extractor_running: boolean;
+  extractor_seen_at: string | null;
+  extractor_note: string | null;
 };
 
 export const INGEST_STATUS_LABELS: Record<string, string> = {

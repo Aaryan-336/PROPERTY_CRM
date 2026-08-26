@@ -68,7 +68,11 @@ export function FeedConsole({
     router.refresh();
   }
 
+  // Three distinct conditions, deliberately not collapsed. "No key",
+  // "nothing running" and "running but behind" all look identical from the
+  // inventory list — it simply stops growing — and each has a different fix.
   const stalled = status.pending > 0 && !status.extraction_configured;
+  const nothingRunning = status.extraction_configured && !status.extractor_running;
   const quiet =
     status.groups_active > 0 &&
     status.messages_last_24h === 0 &&
@@ -136,18 +140,34 @@ export function FeedConsole({
         <Banner tone="signal">
           <strong>Extraction is not configured.</strong> Messages are being
           stored but nothing is being turned into inventory. Set{" "}
-          <code className="tabular">ANTHROPIC_API_KEY</code> in{" "}
-          <code className="tabular">backend/.env</code> and start the worker:{" "}
-          <code className="tabular">python -m app.workers.whatsapp</code>.
+          <code className="tabular">GROQ_API_KEY</code> where the API runs.
           {stalled && ` ${status.pending} message(s) are waiting.`}
         </Banner>
       )}
 
-      {status.extraction_configured && status.pending > 20 && (
+      {nothingRunning && (
+        <Banner tone="signal">
+          <strong>Nothing is reading the queue.</strong> The model key is set,
+          but no extraction loop has reported in
+          {status.extractor_seen_at
+            ? ` since ${relativeTime(status.extractor_seen_at)}`
+            : " — ever"}
+          .{" "}
+          {status.pending > 0
+            ? `${status.pending} message${status.pending === 1 ? "" : "s"} will stay queued until one runs.`
+            : "Messages will queue as they arrive."}{" "}
+          Either run the worker service, or set{" "}
+          <code className="tabular">EXTRACTION_IN_API=true</code> on the API and
+          restart it.
+        </Banner>
+      )}
+
+      {status.extractor_running && status.pending > 20 && (
         <Banner tone="warning">
-          <strong>{status.pending} messages are queued.</strong> The extraction
-          worker may not be running. Start it with{" "}
-          <code className="tabular">python -m app.workers.whatsapp</code>.
+          <strong>{status.pending} messages are queued.</strong> The extractor
+          is running{status.extractor_note ? ` (${status.extractor_note})` : ""}{" "}
+          and working through a backlog. On Groq&rsquo;s free tier this is
+          slow rather than stuck.
         </Banner>
       )}
 
