@@ -94,7 +94,7 @@ services:
       # reported a healthy connection. Check console.groq.com/docs/models when
       # extraction starts failing; app/config.py holds the current default.
       - key: EXTRACTION_MODEL
-        value: openai/gpt-oss-120b
+        value: openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.8-27b
       - key: EXTRACTION_SCHEMA_MODE
         value: auto
 

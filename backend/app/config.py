@@ -74,9 +74,14 @@ class Settings(BaseSettings):
     # environment; named here so `.env` is the single place to configure the
     # backend, and so ingestion-status can report whether it is set.
     groq_api_key: str = ""
+    # One model name, or several separated by commas and tried in order.
+    #
     # Groq retires model names on a fairly short cycle, so treat this as a
-    # setting to check when extraction starts 404ing, not a constant.
-    extraction_model: str = "openai/gpt-oss-120b"
+    # setting to check when extraction starts 404ing, not a constant. The list
+    # form exists for a different reason: Groq's allowances are *per model*, so
+    # a second and third name are a second and third bucket rather than a
+    # fallback of last resort. Empty falls back to extraction.DEFAULT_MODEL.
+    extraction_model: str = ""
     # auto | json_schema | json_object. "auto" asks for a strict schema and
     # downgrades itself if the model will not honour one.
     extraction_schema_mode: str = "auto"

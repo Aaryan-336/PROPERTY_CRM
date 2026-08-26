@@ -42,6 +42,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
+import time
 from dataclasses import dataclass
 from typing import Literal
 
@@ -309,6 +311,22 @@ def render_batch(items: list[ExtractionInput]) -> str:
     )
 
 
+class RateLimited(Exception):
+    """Every model on the key has hit its allowance.
+
+    Separate from an ordinary failure because the response has to be different.
+    Nothing is wrong with the messages, so charging them an attempt would fail
+    a perfectly good backlog after three busy minutes -- the same mistake as
+    charging a message for the host suspending mid-batch.
+    """
+
+    def __init__(self, retry_after: float, message: str) -> None:
+        super().__init__(message)
+        # Clamped: a header asking for an hour would stall the feed, and one
+        # asking for nothing would spin.
+        self.retry_after = max(5.0, min(float(retry_after), 300.0))
+
+
 class ExtractionUnavailable(RuntimeError):
     """No API key configured, or the SDK is not installed."""
 
@@ -319,7 +337,18 @@ class ExtractionUnavailable(RuntimeError):
 # structured copying out of messy text, which does not need a frontier model,
 # and Groq's speed is what makes a per-message batch cheap enough to run
 # continuously.
-DEFAULT_MODEL = "openai/gpt-oss-120b"
+# Tried in order, and the order is deliberate: quality first, then two models
+# that measured just as well on real broadcast posts from these groups and
+# answered faster. They are separate entries because Groq meters *per model* --
+# each has its own tokens-per-minute and requests-per-day bucket on the same
+# key -- so a model that has hit its allowance costs nothing but a move to the
+# next name in this list.
+#
+# Checked against the live API: all three read a ten-flat post correctly.
+# `llama-3.3-70b-versatile` is not here because Groq has retired every Llama
+# chat model; the only `meta-llama/*` entries left are prompt-injection
+# classifiers, which cannot do extraction.
+DEFAULT_MODEL = "openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.8-27b"
 
 
 def _strict_schema(schema: dict) -> dict:
@@ -373,19 +402,37 @@ class Extractor:
         #
         # os.getenv stays as the fallback: on a host like Render these are real
         # environment variables and there is no .env file at all.
-        self.model = (
+        configured = (
             model or settings.extraction_model or os.getenv("EXTRACTION_MODEL")
             or DEFAULT_MODEL
         )
+        # A comma-separated list, tried in order. One name is still a valid
+        # list of one, so an existing EXTRACTION_MODEL keeps working.
+        #
+        # The list exists because Groq's limits are *per model*: every model on
+        # a free key gets its own 8,000-tokens-a-minute and 1,000-requests-a-day
+        # bucket. With one model the feed simply stops for the rest of the
+        # minute; with three it moves to the next bucket and keeps going. This
+        # is not a way around the limits, it is the limits used as published --
+        # and it does not replace a paid tier, it just stops a free one falling
+        # over at the first burst.
+        self._models = [m.strip() for m in configured.split(",") if m.strip()]
+        self.model = self._models[0]
         self._api_key = api_key or settings.groq_api_key or os.getenv("GROQ_API_KEY")
         self._client = None
-        # Whether this model accepts a strict json_schema. Assumed yes and
-        # downgraded permanently on the first rejection -- see extract().
-        self._schema_mode = (
+        # Whether each model accepts a strict json_schema. Per model, not
+        # shared: one model refusing schemas must not silently downgrade the
+        # rest to the weaker JSON mode.
+        default_mode = (
             settings.extraction_schema_mode
             or os.getenv("EXTRACTION_SCHEMA_MODE")
             or "auto"
         )
+        self._schema_modes = {m: default_mode for m in self._models}
+        # Model -> monotonic time before which it is not worth asking again.
+        # A rate-limited model that is retried every batch spends a request
+        # from its daily allowance to be told the same thing.
+        self._cooldowns: dict[str, float] = {}
         # Opening estimate of output tokens per message, raised when a batch
         # comes back truncated and kept for the life of the process. See
         # OUTPUT_PER_ITEM.
@@ -422,8 +469,8 @@ class Extractor:
             raise ExtractionUnavailable(f"Could not build Groq client: {exc}") from exc
         return self._client
 
-    def _response_format(self) -> dict:
-        if self._schema_mode == "json_object":
+    def _response_format(self, model: str) -> dict:
+        if self._schema_modes.get(model) == "json_object":
             return {"type": "json_object"}
         return {
             "type": "json_schema",
@@ -435,11 +482,45 @@ class Extractor:
         }
 
     def extract(self, items: list[ExtractionInput]) -> list[MessageExtraction]:
-        """Extract one batch. Raises on transport/API failure so the worker can
-        retry the batch rather than silently marking messages processed."""
+        """Extract one batch, moving to another model rather than giving up.
+
+        Raises on transport/API failure so the worker can retry the batch rather
+        than silently marking messages processed. ``RateLimited`` is the one
+        exception the caller should treat differently: it means nothing was
+        wrong with these messages, so they must not be charged an attempt for
+        it.
+        """
         if not items:
             return []
-        return self._extract(self._ensure_client(), items, self._budget_for(items))
+        client = self._ensure_client()
+        budget = self._budget_for(items)
+
+        cooling: list[float] = []
+        for model in self._models:
+            resting = self._cooldowns.get(model, 0.0) - time.monotonic()
+            if resting > 0:
+                # Asking a model that just refused costs a request from its
+                # daily allowance to be told the same thing.
+                cooling.append(resting)
+                continue
+            try:
+                return self._extract(client, model, items, budget)
+            except RateLimited as exc:
+                self._cooldowns[model] = time.monotonic() + exc.retry_after
+                cooling.append(exc.retry_after)
+                log.warning(
+                    "%s is rate limited for ~%.0fs; trying the next model",
+                    model,
+                    exc.retry_after,
+                )
+
+        raise RateLimited(
+            min(cooling) if cooling else 60.0,
+            "Every configured model is rate limited: "
+            + ", ".join(self._models)
+            + ". Set EXTRACTION_MODEL to a comma-separated list to spread the "
+            "load, or move to a paid tier.",
+        )
 
     def _budget_for(self, items: list[ExtractionInput]) -> int:
         """Opening estimate of how much output a batch needs."""
@@ -454,16 +535,18 @@ class Extractor:
     def _budget_note(self, items: list[ExtractionInput], budget: int) -> str:
         return f"batch of {len(items)} at {budget} output tokens"
 
-    def _split(self, client, items: list[ExtractionInput], budget: int, why: str):
+    def _split(
+        self, client, model: str, items: list[ExtractionInput], budget: int, why: str
+    ):
         """Halve the batch and extract each side."""
         half = len(items) // 2
         log.warning("%s; splitting into %d and %d", why, half, len(items) - half)
-        return self._extract(client, items[:half], budget) + self._extract(
-            client, items[half:], budget
+        return self._extract(client, model, items[:half], budget) + self._extract(
+            client, model, items[half:], budget
         )
 
     def _grow_or_split(
-        self, client, items: list[ExtractionInput], budget: int
+        self, client, model: str, items: list[ExtractionInput], budget: int
     ) -> list[MessageExtraction]:
         """Respond to a response that did not fit in the room it was given.
 
@@ -480,7 +563,7 @@ class Extractor:
                 raised,
             )
             self._remember(items, raised)
-            return self._extract(client, items, raised)
+            return self._extract(client, model, items, raised)
 
         if len(items) > 1:
             # At the ceiling. Now -- and only now -- fewer messages per request
@@ -489,6 +572,7 @@ class Extractor:
             # smaller budget than the one that had just proved insufficient.
             return self._split(
                 client,
+                model,
                 items,
                 budget,
                 f"{self._budget_note(items, budget)} truncated at the ceiling",
@@ -501,7 +585,7 @@ class Extractor:
         )
 
     def _extract(
-        self, client, items: list[ExtractionInput], budget: int
+        self, client, model: str, items: list[ExtractionInput], budget: int
     ) -> list[MessageExtraction]:
         """One request, with the two ways it can be too big handled separately.
 
@@ -522,7 +606,7 @@ class Extractor:
         splits only once there is no ceiling left to raise.
         """
         try:
-            response = self._call(client, items, budget)
+            response = self._call(client, model, items, budget)
         except Exception as exc:
             # The batch does not fit the account's per-minute token allowance.
             #
@@ -535,10 +619,18 @@ class Extractor:
             # Halving and retrying adapts to whatever tier the account is on,
             # instead of hard-coding the smallest one and making paid accounts
             # pay for the system prompt many times over.
+            # A plain rate limit. Not the batch's fault and not fixed by
+            # making it smaller -- the allowance is per minute and per day, so
+            # a smaller request refused now is still refused. Handled by the
+            # caller, which moves to another model's bucket.
+            if _is_rate_limited(exc):
+                raise RateLimited(_retry_after(exc), str(exc)) from exc
+
             if _is_too_large(exc) and len(items) > 1:
                 half = len(items) // 2
                 return self._split(
                     client,
+                    model,
                     items,
                     self._budget_for(items[:half]),
                     f"{self._budget_note(items, budget)} exceeds the token allowance",
@@ -561,20 +653,20 @@ class Extractor:
             # like a bad prompt, so it was neither retried with more room nor
             # reported as what it was.
             if _is_output_truncated(exc):
-                return self._grow_or_split(client, items, budget)
+                return self._grow_or_split(client, model, items, budget)
 
             # Model does not do strict schemas. Groq reports this as a 400
             # rather than by advertising capability, so the only way to know is
             # to be told. Downgrade once, for the life of the process, instead
             # of paying a failed request per batch forever.
-            if self._schema_mode == "auto" and _is_schema_rejection(exc):
+            if self._schema_modes.get(model) == "auto" and _is_schema_rejection(exc):
                 log.warning(
                     "model %s rejected json_schema (%s); falling back to JSON mode",
-                    self.model,
+                    model,
                     exc,
                 )
-                self._schema_mode = "json_object"
-                response = self._call(client, items, budget)
+                self._schema_modes[model] = "json_object"
+                response = self._call(client, model, items, budget)
             else:
                 raise
 
@@ -582,7 +674,7 @@ class Extractor:
         if choice.finish_reason == "length":
             # Silently truncated JSON parses as garbage or not at all, so this
             # must never fall through to the parser.
-            return self._grow_or_split(client, items, budget)
+            return self._grow_or_split(client, model, items, budget)
 
         content = choice.message.content
         if not content:
@@ -604,9 +696,9 @@ class Extractor:
 
         return _align(items, parsed.results)
 
-    def _call(self, client, items: list[ExtractionInput], budget: int):
+    def _call(self, client, model: str, items: list[ExtractionInput], budget: int):
         system = SYSTEM_PROMPT
-        if self._schema_mode == "json_object":
+        if self._schema_modes.get(model) == "json_object":
             # JSON mode constrains the response to *valid JSON*, not to our
             # shape, so in this path the schema has to be carried in the prompt.
             # (Groq also requires the word JSON to appear in it.)
@@ -617,12 +709,12 @@ class Extractor:
             )
 
         return client.chat.completions.create(
-            model=self.model,
+            model=model,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": render_batch(items)},
             ],
-            response_format=self._response_format(),
+            response_format=self._response_format(model),
             # Extraction is copying, not composition. Nothing here benefits
             # from sampling variety, and reruns of the same backlog should
             # agree with each other.
@@ -644,6 +736,45 @@ def _is_too_large(exc: Exception) -> bool:
         return False
     text = str(exc).lower()
     return "too large" in text or "reduce your message size" in text
+
+
+_DURATION = re.compile(r"(?:(\d+(?:\.\d+)?)h)?(?:(\d+(?:\.\d+)?)m)?(?:(\d+(?:\.\d+)?)s)?$")
+
+
+def _is_rate_limited(exc: Exception) -> bool:
+    """True for an ordinary allowance refusal, as opposed to an oversized one.
+
+    Both are 429s. ``_is_too_large`` claims the oversized case first, because
+    that one *is* fixed by sending less; this one is not fixed by anything the
+    request can do.
+    """
+    return getattr(exc, "status_code", None) == 429 and not _is_too_large(exc)
+
+
+def _retry_after(exc: Exception) -> float:
+    """How long the API said to wait, in seconds.
+
+    Groq answers in two places and two formats: a plain-seconds `retry-after`,
+    and `x-ratelimit-reset-tokens` as a duration like "1m26.4s". Read rather
+    than assumed, because guessing high stalls the feed and guessing low spends
+    the daily request allowance on being refused again.
+    """
+    headers = getattr(getattr(exc, "response", None), "headers", None) or {}
+    raw = headers.get("retry-after")
+    if raw:
+        try:
+            return float(raw)
+        except ValueError:
+            pass
+    for key in ("x-ratelimit-reset-tokens", "x-ratelimit-reset-requests"):
+        value = headers.get(key)
+        if not value:
+            continue
+        match = _DURATION.match(value.strip())
+        if match and any(match.groups()):
+            hours, minutes, seconds = (float(g or 0) for g in match.groups())
+            return hours * 3600 + minutes * 60 + seconds
+    return 60.0
 
 
 def _is_output_truncated(exc: Exception) -> bool:

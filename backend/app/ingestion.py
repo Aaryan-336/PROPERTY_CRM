@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session as DbSession
 from app.db import system_scope
 from app.extraction import (
     ExtractedListing,
+    RateLimited,
     ExtractionInput,
     Extractor,
     ExtractionUnavailable,
@@ -128,6 +129,12 @@ class IngestionStats:
     duplicates_merged: int = 0
     not_listings: int = 0
     failures: int = 0
+    # Messages handed back untouched because the model allowance ran out.
+    # Counted apart from failures: nothing went wrong with them.
+    rate_limited: int = 0
+    # How long the API asked us to wait, so the loop can sleep for about that
+    # rather than spinning through the daily request allowance.
+    retry_after: float = 0.0
 
     def as_dict(self) -> dict[str, int]:
         return {
@@ -137,6 +144,7 @@ class IngestionStats:
             "duplicates_merged": self.duplicates_merged,
             "not_listings": self.not_listings,
             "failures": self.failures,
+            "rate_limited": self.rate_limited,
         }
 
 
@@ -523,6 +531,17 @@ def run_batch(
 
     try:
         results = extractor.extract(items)
+    except RateLimited as exc:
+        # Not the batch's fault, so it must not cost the batch anything. These
+        # messages are word-for-word fine and will extract on the next pass;
+        # charging them an attempt would fail a perfectly good backlog after
+        # three busy minutes, exactly as charging one for the host suspending
+        # mid-batch would.
+        log.warning("all models rate limited: %s", exc)
+        _release(db, messages, str(exc), charge_attempt=False)
+        stats.rate_limited += len(messages)
+        stats.retry_after = max(stats.retry_after, exc.retry_after)
+        return stats
     except Exception as exc:
         # The whole batch failed (network, rate limit, refusal). Release the
         # claim so it retries; `attempts` was already incremented, so a
@@ -555,8 +574,19 @@ def run_batch(
     return stats
 
 
-def _release(db: DbSession, messages: list[WhatsAppMessage], error: str) -> None:
+def _release(
+    db: DbSession,
+    messages: list[WhatsAppMessage],
+    error: str,
+    *,
+    charge_attempt: bool = True,
+) -> None:
     """Return claimed messages to the queue, or fail them if out of attempts.
+
+    ``charge_attempt=False`` hands back the attempt the claim took. It is for
+    failures that belong to the infrastructure rather than the message -- a
+    rate limit, a worker killed mid-batch -- where counting them would retire
+    messages that were never the problem.
 
     ``synchronize_session=False`` throughout: the default strategy issues a
     SELECT to reconcile in-session objects, and that SELECT does not carry the
@@ -572,18 +602,28 @@ def _release(db: DbSession, messages: list[WhatsAppMessage], error: str) -> None
         db.execute(
             update(WhatsAppMessage)
             .where(WhatsAppMessage.id.in_(ids))
-            .values(status=INGEST_PENDING, claimed_at=None, error=error[:1000])
+            .values(
+                status=INGEST_PENDING,
+                claimed_at=None,
+                error=error[:1000],
+                **(
+                    {}
+                    if charge_attempt
+                    else {"attempts": func.greatest(WhatsAppMessage.attempts - 1, 0)}
+                ),
+            )
             .execution_options(synchronize_session=False)
         )
-        # Second pass rather than a CASE: a message only exhausts its retries
-        # once `attempts` has already been incremented by the claim.
-        db.execute(
-            update(WhatsAppMessage)
-            .where(WhatsAppMessage.id.in_(ids))
-            .where(WhatsAppMessage.attempts >= MAX_EXTRACTION_ATTEMPTS)
-            .values(status=INGEST_FAILED)
-            .execution_options(synchronize_session=False)
-        )
+        if charge_attempt:
+            # Second pass rather than a CASE: a message only exhausts its
+            # retries once `attempts` has already been incremented by the claim.
+            db.execute(
+                update(WhatsAppMessage)
+                .where(WhatsAppMessage.id.in_(ids))
+                .where(WhatsAppMessage.attempts >= MAX_EXTRACTION_ATTEMPTS)
+                .values(status=INGEST_FAILED)
+                .execution_options(synchronize_session=False)
+            )
         db.commit()
 
 

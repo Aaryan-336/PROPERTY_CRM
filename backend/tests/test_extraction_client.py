@@ -392,3 +392,149 @@ def test_an_oversized_batch_is_split_rather_than_failed(monkeypatch):
     # of requests against the very limit being hit.
     assert _is_too_large(OrdinaryRateLimit()) is False
     assert _is_too_large(RuntimeError("something else")) is False
+
+
+# ---------------------------------------------------------------------------
+# Rate limits, and the fact that Groq meters per model
+# ---------------------------------------------------------------------------
+
+
+def _rate_limited(reset: str | None = "1m26.4s", retry_after: str | None = None):
+    headers = {}
+    if reset:
+        headers["x-ratelimit-reset-tokens"] = reset
+    if retry_after:
+        headers["retry-after"] = retry_after
+
+    class Limited(Exception):
+        status_code = 429
+        response = types.SimpleNamespace(headers=headers)
+
+        def __str__(self) -> str:
+            return "Rate limit reached for model in organization org_x"
+
+    return Limited()
+
+
+class Rotating:
+    """A client that refuses some models and answers for others."""
+
+    def __init__(self, refuse: set[str], reset: str = "1m26.4s") -> None:
+        self.refuse = refuse
+        self.reset = reset
+        self.calls: list[dict] = []
+        self.chat = types.SimpleNamespace(
+            completions=types.SimpleNamespace(create=self._create)
+        )
+
+    def _create(self, **kwargs):
+        self.calls.append(kwargs)
+        if kwargs["model"] in self.refuse:
+            raise _rate_limited(self.reset)
+        return _response(PAYLOAD)
+
+
+def _chain(client, models: str) -> Extractor:
+    e = Extractor(api_key="test-key", model=models)
+    e._client = client
+    return e
+
+
+def test_a_rate_limited_model_moves_to_the_next_one():
+    """Groq meters per model: every model on a key has its own allowance, so a
+    second name is a second bucket rather than a consolation prize."""
+    client = Rotating(refuse={"model-a"})
+    results = _chain(client, "model-a,model-b").extract(ITEMS)
+
+    assert len(results) == 2
+    assert [c["model"] for c in client.calls] == ["model-a", "model-b"]
+
+
+def test_a_model_that_refused_is_not_asked_again_while_it_cools():
+    """Retrying a model that just refused spends a request from its daily
+    allowance to be told the same thing."""
+    client = Rotating(refuse={"model-a"})
+    extractor = _chain(client, "model-a,model-b")
+
+    extractor.extract(ITEMS)
+    client.calls.clear()
+    extractor.extract(ITEMS)
+
+    assert [c["model"] for c in client.calls] == ["model-b"]
+
+
+def test_when_everything_is_limited_it_says_so_rather_than_failing_the_batch():
+    """The distinction the caller needs: nothing is wrong with these messages."""
+    from app.extraction import RateLimited
+
+    client = Rotating(refuse={"model-a", "model-b"})
+    with pytest.raises(RateLimited) as caught:
+        _chain(client, "model-a,model-b").extract(ITEMS)
+
+    assert caught.value.retry_after >= 5
+    assert "model-a" in str(caught.value)
+
+
+def test_one_model_refusing_schemas_does_not_downgrade_the_others():
+    """JSON mode constrains syntax, not shape. Applying one model's limitation
+    to the rest would quietly weaken every extraction on the key."""
+    calls: list[dict] = []
+
+    class Mixed:
+        def __init__(self) -> None:
+            self.chat = types.SimpleNamespace(
+                completions=types.SimpleNamespace(create=self._create)
+            )
+
+        def _create(self, **kwargs):
+            calls.append(kwargs)
+            if (
+                kwargs["model"] == "old-model"
+                and kwargs["response_format"]["type"] == "json_schema"
+            ):
+                raise _SchemaRejected()
+            return _response(PAYLOAD)
+
+    extractor = _chain(Mixed(), "old-model,new-model")
+    extractor.extract(ITEMS)
+
+    assert extractor._schema_modes["old-model"] == "json_object"
+    assert extractor._schema_modes["new-model"] == "auto"
+
+
+@pytest.mark.parametrize(
+    "headers,expected",
+    [
+        ({"retry-after": "30"}, 30.0),
+        ({"x-ratelimit-reset-tokens": "59.28s"}, 59.28),
+        ({"x-ratelimit-reset-tokens": "1m26.4s"}, 86.4),
+        ({"x-ratelimit-reset-tokens": "23m2.4s"}, 300.0),   # clamped
+        ({}, 60.0),
+    ],
+)
+def test_the_wait_is_read_from_the_response_not_guessed(headers, expected):
+    """Guessing high stalls the feed; guessing low spends the daily request
+    allowance on being refused again."""
+    from app.extraction import RateLimited, _retry_after
+
+    exc = type(
+        "E",
+        (Exception,),
+        {"status_code": 429, "response": types.SimpleNamespace(headers=headers)},
+    )()
+    assert RateLimited(_retry_after(exc), "x").retry_after == expected
+
+
+def test_an_oversized_request_is_not_treated_as_a_rate_limit():
+    """Both are 429s and the responses are opposite: one is fixed by sending
+    less, the other is not fixed by anything the request can do."""
+    from app.extraction import _is_rate_limited
+
+    class TooLarge(Exception):
+        status_code = 429
+
+        def __str__(self) -> str:
+            return "Request too large, please reduce your message size"
+
+    assert _is_rate_limited(TooLarge()) is False
+    assert _is_rate_limited(_rate_limited()) is True

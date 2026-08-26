@@ -1082,3 +1082,27 @@ def test_a_long_message_is_never_treated_as_chatter(group):
     from app.ingestion import is_obvious_chatter
 
     assert is_obvious_chatter("hello " * 40) is False
+
+
+def test_a_rate_limit_does_not_cost_the_message_an_attempt(group):
+    """A busy minute must not retire a perfectly good backlog.
+
+    `attempts` exists to stop a malformed message being re-sent to the model
+    for ever. A rate limit says nothing about the message, so charging it would
+    fail three-quarters of a busy afternoon's inventory.
+    """
+    from app.extraction import RateLimited
+
+    class Limited:
+        def extract(self, items):
+            raise RateLimited(30.0, "every model is rate limited")
+
+    body = "ratelimited: 2bhk andheri west 65k"
+    message_id = _queue_message(group["id"], body, "ratelimit-1")
+
+    for _ in range(4):  # more than MAX_EXTRACTION_ATTEMPTS
+        _run(Limited())
+
+    row = _get_message(message_id)
+    assert row["status"] == "pending", "must stay in the queue, not fail"
+    assert row["attempts"] == 0

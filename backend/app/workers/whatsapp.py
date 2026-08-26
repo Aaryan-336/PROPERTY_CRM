@@ -123,7 +123,12 @@ def run_forever(extractor: Extractor, batch_size: int, kind: str = "standalone")
             db.close()
 
         _accumulate(totals, stats)
-        if stats.messages_processed == 0 and stats.failures == 0:
+        if stats.rate_limited:
+            # Wait roughly as long as the API asked. Spinning here would spend
+            # the day's request allowance on being refused, which is the one
+            # way to turn a busy minute into a broken afternoon.
+            time.sleep(max(IDLE_SLEEP_SECONDS, stats.retry_after))
+        elif stats.messages_processed == 0 and stats.failures == 0:
             time.sleep(IDLE_SLEEP_SECONDS)
         elif stats.failures:
             time.sleep(ERROR_SLEEP_SECONDS)
@@ -155,6 +160,7 @@ def _accumulate(totals: IngestionStats, stats: IngestionStats) -> None:
     totals.duplicates_merged += stats.duplicates_merged
     totals.not_listings += stats.not_listings
     totals.failures += stats.failures
+    totals.rate_limited += stats.rate_limited
 
 
 def dry_run(extractor: Extractor, batch_size: int) -> None:

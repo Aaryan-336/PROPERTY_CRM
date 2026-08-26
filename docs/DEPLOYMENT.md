@@ -114,18 +114,48 @@ Queued messages are never lost while this is being sorted out: whenever an
 extractor does start, it claims the whole backlog from `pending` and drains it.
 There is nothing to replay by hand.
 
-### Extraction throughput
+### Extraction throughput and rate limits
 
-The ceiling is the model tier, not this code. Measured against Groq's free
-tier with `openai/gpt-oss-120b`: the system prompt and JSON schema cost roughly
-1,900 input tokens per request before a single message is added, and Groq bills
-*reserved* completion tokens against the same per-minute allowance. A free
-account gets 8,000 tokens a minute, so a full batch of eight does not fit and
-is split — landing at roughly one or two requests a minute.
+Measured on a free Groq key (read from `x-ratelimit-*` response headers, not
+guessed):
 
-**That is not enough for live group traffic.** If the feed needs to keep up in
-real time, a paid Groq tier is the lever; nothing on this side substitutes for
-it. What this side does do:
+| Limit | Value | Scope |
+|---|---|---|
+| Tokens per minute | 8,000 | **per model** |
+| Requests per day | 1,000 | **per model** |
+
+The system prompt and JSON schema cost roughly 1,900 input tokens per request
+before a single message is added, and Groq bills *reserved* completion tokens
+against the same allowance — so a full batch of eight does not fit in 8,000 and
+gets split.
+
+**The allowances are per model, and that is the lever.** `EXTRACTION_MODEL`
+takes a comma-separated list, tried in order, so three models is three separate
+buckets on the same key. A model that has hit its limit is put on a cooldown
+for as long as its own response header says, and the batch moves to the next
+name rather than failing:
+
+```
+EXTRACTION_MODEL=openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.8-27b
+```
+
+All three were checked against the live API on real broadcast posts from these
+groups; the two smaller ones read a ten-flat message as accurately as the 120b
+and answered in about two seconds rather than four.
+
+A rate limit never costs a message an attempt. It says nothing about the
+message, and charging it would retire a perfectly good backlog after three busy
+minutes.
+
+> **There is no Llama option.** Groq has retired its Llama chat models —
+> `llama-3.3-70b-versatile` and `llama-3.1-8b-instant` are both gone. The only
+> `meta-llama/*` models still listed are `llama-prompt-guard-2-*`, which are
+> prompt-injection classifiers and cannot do extraction. Check
+> `GET /openai/v1/models` with your own key before planning around a model name.
+
+**For genuinely live group traffic, a paid Groq tier is still the honest
+answer**; rotation stops a free key falling over at the first burst, it does
+not turn it into a paid one. What this side does do:
 
 - Obvious chatter — short, digit-free, no listing vocabulary — is settled
   without a model call at all. In broker groups that is a large share of the
