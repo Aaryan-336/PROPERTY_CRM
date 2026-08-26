@@ -940,6 +940,7 @@ async def gateway_commands(
         commands = GatewayCommands(
             pair=session.pair_requested_at is not None,
             sync_groups=session.sync_requested_at is not None,
+            pair_requested_at=session.pair_requested_at,
         )
         if commands.pair or commands.sync_groups:
             session.pair_requested_at = None

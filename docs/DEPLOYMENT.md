@@ -353,8 +353,23 @@ On the office Mac, register it so it starts at login and restarts if it stops:
 
 ```bash
 cd gateway && ./install-autostart.sh      # --uninstall to undo
-tail -f gateway/gateway.log               # what it is doing
+tail -f ~/Library/Logs/balaji-gateway.log # what it is doing
 ```
+
+> **The checkout cannot live in Desktop, Documents or Downloads.** macOS does
+> not let a background service into those folders. launchd starts the gateway,
+> node cannot resolve its own working directory, and it dies with
+> `EPERM: operation not permitted, uv_cwd` — then retries every 30 seconds for
+> ever. `install-autostart.sh` now refuses up front and says so rather than
+> reporting success on a job that cannot run. Move the checkout somewhere
+> unprotected (`~/Balaji_CRM` is fine) and re-run it. Started by hand with
+> `npm start` the gateway works from anywhere; this restriction is launchd's,
+> not the gateway's.
+>
+> The log lives outside the checkout for the same reason: launchd opens that
+> file itself, before the job starts, so a log inside a protected folder makes
+> the job fail to spawn at all with `EX_CONFIG (78)` — which reads like a
+> malformed plist and is not one.
 
 That covers the machine being rebooted or the terminal being closed. It does not
 cover the machine being asleep or off, which is the argument for a small
@@ -434,6 +449,16 @@ service restarts — which is what gets a number flagged.
 
 **Pairing does not need the logs.** Once the worker is up, sign in as the owner
 → **Inventory feed** → **Connect WhatsApp**, and the QR appears in the browser.
+
+> **Do not press Connect to wake a gateway that is merely stopped.** The button
+> means "link a different phone", and acting on it clears the saved session —
+> so pressing it while the gateway is down destroys a login that would have
+> reconnected by itself the moment the process started. The CRM cannot tell the
+> difference, because it cannot see the gateway's disk; it shows "not linked"
+> and offers Connect without asking. The gateway now ignores a pair request
+> that predates its own connection for exactly this reason, but the habit to
+> keep is: start the gateway first, and only press Connect if it then reports
+> that it has no session.
 The gateway polls for that button every four seconds and reports the code back
 through the API; the terminal QR is still printed, but only for whoever is
 diagnosing a deployment.

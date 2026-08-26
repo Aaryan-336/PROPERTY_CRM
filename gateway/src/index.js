@@ -89,6 +89,10 @@ let watched = new Map();
 // Mirrors the socket state for the heartbeat, which fires on a timer and so
 // cannot read it from the event that last changed it.
 let connected = false;
+// When the current socket came up, in epoch milliseconds. Used to date a
+// pairing request against the connection, so a request made while this process
+// was down is not allowed to tear down the session it then established.
+let connectedAt = null;
 let currentJid = null;
 let currentState = "connecting";
 let flushing = false;
@@ -276,6 +280,7 @@ async function connect() {
     if (connection === "open") {
       log.info("connected to WhatsApp");
       connected = true;
+      connectedAt = Date.now();
       currentState = "connected";
       currentJid = sock.user?.id ?? null;
       void reportSession({
@@ -316,6 +321,7 @@ async function connect() {
       // of an owner whose scan had just worked.
       const restartRequired = status === DisconnectReason.restartRequired;
       connected = false;
+      connectedAt = null;
       currentState = loggedOut
         ? "logged_out"
         : restartRequired
@@ -439,6 +445,7 @@ async function startFreshPairing() {
   try {
     log.warn("re-pair requested from the CRM; clearing the saved session");
     connected = false;
+    connectedAt = null;
     currentState = "connecting";
     void reportSession({ state: "connecting", last_error: null });
 
@@ -467,8 +474,33 @@ async function startFreshPairing() {
 /** Anything the owner has queued from the CRM since the last poll. */
 async function pollCommands() {
   if (shuttingDown) return;
-  const { pair, syncGroups } = await fetchCommands();
+  const { pair, syncGroups, pairRequestedAt } = await fetchCommands();
   if (pair) {
+    // One button, two meanings, told apart only by when it was pressed.
+    //
+    // Pressed while the CRM shows a linked account, it means "link a different
+    // phone" -- the screen asks twice before sending it. Pressed while the CRM
+    // shows nothing connected, it means "you are dead, wake up", and the screen
+    // does not ask at all, because as far as it knows there is nothing to lose.
+    //
+    // But the CRM cannot see this machine. A gateway that was simply not
+    // running still has a perfectly good session on disk, and the second kind
+    // of press then destroys it: the gateway starts, reconnects silently, polls
+    // a request made minutes before it was alive, and wipes the very session it
+    // just proved works. The owner is asked to scan a QR to fix a gateway that
+    // had already fixed itself -- and an unnecessary re-link is the most
+    // account-flagging thing this process does.
+    //
+    // So a request that predates this connection is treated as answered by the
+    // connection itself. A deliberate relink is pressed at a screen showing the
+    // account it is replacing, which can only happen after connecting.
+    if (connectedAt && pairRequestedAt && pairRequestedAt < connectedAt) {
+      log.info(
+        "ignoring a pair request from before this session connected — " +
+          "it asked for a connection, and there is one",
+      );
+      return;
+    }
     await startFreshPairing();
     return; // connecting re-syncs the directory anyway
   }

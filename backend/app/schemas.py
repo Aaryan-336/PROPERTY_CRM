@@ -100,6 +100,11 @@ class GatewayCommands(BaseModel):
 
     pair: bool = False
     sync_groups: bool = False
+    # When the pair was asked for. The gateway needs this to tell "wake up, you
+    # are not connected" from "I want to link a different phone" -- they are the
+    # same button and only the timing separates them. See the gateway's
+    # pollCommands.
+    pair_requested_at: datetime | None = None
 
 
 class DirectoryGroup(BaseModel):

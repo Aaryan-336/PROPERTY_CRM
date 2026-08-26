@@ -113,9 +113,18 @@ export async function fetchWatchedGroups() {
 export async function fetchCommands() {
   try {
     const data = await get("/internal/whatsapp/commands");
-    return { pair: Boolean(data.pair), syncGroups: Boolean(data.sync_groups) };
+    return {
+      pair: Boolean(data.pair),
+      syncGroups: Boolean(data.sync_groups),
+      // Milliseconds, or null. The gateway compares this against the moment it
+      // connected, to tell a request meant to revive a dead gateway from one
+      // meant to link a different phone.
+      pairRequestedAt: data.pair_requested_at
+        ? Date.parse(data.pair_requested_at)
+        : null,
+    };
   } catch {
-    return { pair: false, syncGroups: false };
+    return { pair: false, syncGroups: false, pairRequestedAt: null };
   }
 }
 
