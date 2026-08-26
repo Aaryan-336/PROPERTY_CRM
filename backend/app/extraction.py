@@ -60,6 +60,36 @@ CONFIDENCE_SCORES = {"high": 0.92, "medium": 0.68, "low": 0.4}
 # rather than trusted silently. See models.REVIEW_STATES.
 REVIEW_THRESHOLD = 0.6
 
+# How many output tokens to reserve, per message in the batch.
+#
+# This cannot simply be the model's maximum. Groq bills *reserved* completion
+# tokens against the per-minute allowance, so a flat 16000 ceiling made a
+# one-message batch cost ~17.7k tokens and get a 413 on a free account whose
+# whole budget is 8000 a minute -- every extraction failing while the feed
+# reported a healthy connection.
+#
+# So it is an estimate, sized for the common case: one flat, a few hundred
+# tokens of JSON. The estimate is wrong often enough to matter -- brokers post
+# a numbered list of a dozen flats in a single message, which is precisely the
+# format this module exists to read -- and being wrong shows up as a truncated
+# response rather than an error. `Extractor.extract` raises the ceiling and
+# retries when that happens, rather than guessing high for every batch and
+# making the common case pay for the rare one.
+OUTPUT_PER_ITEM = 700
+# Headroom for the JSON envelope around the listings themselves.
+OUTPUT_ENVELOPE = 600
+# The hard stop. Past here, splitting the batch is the only remaining move.
+OUTPUT_CEILING = 16000
+# How high the *remembered* per-message estimate may ratchet.
+#
+# A group whose brokers all post numbered lists should not rediscover that on
+# every batch, paying a truncated request each time -- so a truncation raises
+# the opening estimate for subsequent batches, the same way a schema rejection
+# is remembered for the life of the process. Capped, because reserved tokens
+# count against the per-minute allowance: left uncapped, one freak message
+# would make every later batch reserve the maximum and get refused.
+OUTPUT_PER_ITEM_CAP = 2800
+
 
 class ExtractedListing(BaseModel):
     """One property inside one message.
@@ -337,6 +367,10 @@ class Extractor:
             or os.getenv("EXTRACTION_SCHEMA_MODE")
             or "auto"
         )
+        # Opening estimate of output tokens per message, raised when a batch
+        # comes back truncated and kept for the life of the process. See
+        # OUTPUT_PER_ITEM.
+        self._per_item = OUTPUT_PER_ITEM
 
     @property
     def available(self) -> bool:
@@ -386,10 +420,90 @@ class Extractor:
         retry the batch rather than silently marking messages processed."""
         if not items:
             return []
-        client = self._ensure_client()
+        return self._extract(self._ensure_client(), items, self._budget_for(items))
 
+    def _budget_for(self, items: list[ExtractionInput]) -> int:
+        """Opening estimate of how much output a batch needs."""
+        return min(OUTPUT_CEILING, self._per_item * len(items) + OUTPUT_ENVELOPE)
+
+    def _remember(self, items: list[ExtractionInput], budget: int) -> None:
+        """Carry what this batch needed into the next one."""
+        self._per_item = min(
+            OUTPUT_PER_ITEM_CAP, max(self._per_item, budget // max(1, len(items)))
+        )
+
+    def _budget_note(self, items: list[ExtractionInput], budget: int) -> str:
+        return f"batch of {len(items)} at {budget} output tokens"
+
+    def _split(self, client, items: list[ExtractionInput], budget: int, why: str):
+        """Halve the batch and extract each side."""
+        half = len(items) // 2
+        log.warning("%s; splitting into %d and %d", why, half, len(items) - half)
+        return self._extract(client, items[:half], budget) + self._extract(
+            client, items[half:], budget
+        )
+
+    def _grow_or_split(
+        self, client, items: list[ExtractionInput], budget: int
+    ) -> list[MessageExtraction]:
+        """Respond to a response that did not fit in the room it was given.
+
+        Raise the ceiling for the *same* messages first. Splitting is the last
+        resort and not the first, because the budget is sized per message:
+        splitting hands each half a smaller allowance than the one that had
+        just proved insufficient.
+        """
+        if budget < OUTPUT_CEILING:
+            raised = min(OUTPUT_CEILING, budget * 2)
+            log.warning(
+                "%s came back truncated; retrying at %d",
+                self._budget_note(items, budget),
+                raised,
+            )
+            self._remember(items, raised)
+            return self._extract(client, items, raised)
+
+        if len(items) > 1:
+            # At the ceiling. Now -- and only now -- fewer messages per request
+            # means more of the ceiling for each of them. The ceiling is carried
+            # into both halves rather than recomputed, which would hand them a
+            # smaller budget than the one that had just proved insufficient.
+            return self._split(
+                client,
+                items,
+                budget,
+                f"{self._budget_note(items, budget)} truncated at the ceiling",
+            )
+
+        raise RuntimeError(
+            f"One message needs more than {OUTPUT_CEILING} tokens of output to "
+            "read. It is probably not an ordinary listing — a forwarded "
+            "brochure, or a very long broadcast."
+        )
+
+    def _extract(
+        self, client, items: list[ExtractionInput], budget: int
+    ) -> list[MessageExtraction]:
+        """One request, with the two ways it can be too big handled separately.
+
+        They look alike and are not. *The request* is too big when the reserved
+        tokens exceed the account's per-minute allowance -- fewer messages per
+        request is the fix. *The response* is too big when the model runs out of
+        room mid-JSON -- and splitting the batch makes that **worse**, because
+        the budget is sized per message: four messages share 3400 tokens, but
+        one message alone gets only 1300. Splitting a truncated batch shrinks
+        the very allowance that was already too small.
+
+        That is not hypothetical. It is what happened to a group whose brokers
+        post numbered lists of a dozen flats: every batch truncated, the advice
+        in the error message ("lower the batch size") was the opposite of the
+        fix, and the queue stopped moving.
+
+        So a truncated response raises the ceiling for the *same* messages, and
+        splits only once there is no ceiling left to raise.
+        """
         try:
-            response = self._call(client, items)
+            response = self._call(client, items, budget)
         except Exception as exc:
             # The batch does not fit the account's per-minute token allowance.
             #
@@ -404,13 +518,31 @@ class Extractor:
             # pay for the system prompt many times over.
             if _is_too_large(exc) and len(items) > 1:
                 half = len(items) // 2
-                log.warning(
-                    "batch of %d exceeds the token allowance; splitting into %d and %d",
-                    len(items),
-                    half,
-                    len(items) - half,
+                return self._split(
+                    client,
+                    items,
+                    self._budget_for(items[:half]),
+                    f"{self._budget_note(items, budget)} exceeds the token allowance",
                 )
-                return self.extract(items[:half]) + self.extract(items[half:])
+
+            if _is_too_large(exc):
+                # One message, and the account will not reserve enough to read
+                # it. Splitting is not available and waiting does not help.
+                raise RuntimeError(
+                    f"A single message needs {budget} tokens of output, and this "
+                    "account's per-minute allowance will not reserve that much. "
+                    "A paid Groq tier reads it; the free one cannot."
+                ) from exc
+
+            # A truncated response, reported as a 400 rather than as a finish
+            # reason. Under a strict schema the API validates before it answers,
+            # so output that ran out of room comes back as "failed to generate
+            # JSON" -- the same condition as `finish_reason == "length"`, wearing
+            # a different hat. Missing this was the whole bug: the request looked
+            # like a bad prompt, so it was neither retried with more room nor
+            # reported as what it was.
+            if _is_output_truncated(exc):
+                return self._grow_or_split(client, items, budget)
 
             # Model does not do strict schemas. Groq reports this as a 400
             # rather than by advertising capability, so the only way to know is
@@ -423,18 +555,15 @@ class Extractor:
                     exc,
                 )
                 self._schema_mode = "json_object"
-                response = self._call(client, items)
+                response = self._call(client, items, budget)
             else:
                 raise
 
         choice = response.choices[0]
         if choice.finish_reason == "length":
-            # Silently truncated JSON parses as garbage or not at all. Say so,
-            # so the worker retries rather than marking the batch processed.
-            raise RuntimeError(
-                f"Extraction hit the output limit on a batch of {len(items)}. "
-                "Lower WHATSAPP_EXTRACT_BATCH_SIZE."
-            )
+            # Silently truncated JSON parses as garbage or not at all, so this
+            # must never fall through to the parser.
+            return self._grow_or_split(client, items, budget)
 
         content = choice.message.content
         if not content:
@@ -456,7 +585,7 @@ class Extractor:
 
         return _align(items, parsed.results)
 
-    def _call(self, client, items: list[ExtractionInput]):
+    def _call(self, client, items: list[ExtractionInput], budget: int):
         system = SYSTEM_PROMPT
         if self._schema_mode == "json_object":
             # JSON mode constrains the response to *valid JSON*, not to our
@@ -479,18 +608,9 @@ class Extractor:
             # from sampling variety, and reruns of the same backlog should
             # agree with each other.
             temperature=0,
-            # Sized to the batch, not a flat ceiling.
-            #
-            # Groq bills reserved completion tokens against the tokens-per-minute
-            # allowance, so a fixed 16000 made a one-message batch cost ~17.7k
-            # tokens and get a 413 on a free account whose whole budget is 8000
-            # a minute. Every extraction failed, messages piled up as `pending`,
-            # and the feed showed a healthy connection producing no listings.
-            #
-            # A message rarely yields more than one listing and a listing is a
-            # few hundred tokens of JSON; 700 each plus headroom for the
-            # envelope covers a dense post with several flats in it.
-            max_tokens=min(16000, 700 * len(items) + 600),
+            # Set by the caller, which raises it when a response comes back
+            # truncated. See OUTPUT_PER_ITEM.
+            max_tokens=budget,
         )
 
 
@@ -505,6 +625,23 @@ def _is_too_large(exc: Exception) -> bool:
         return False
     text = str(exc).lower()
     return "too large" in text or "reduce your message size" in text
+
+
+def _is_output_truncated(exc: Exception) -> bool:
+    """True when the model ran out of output room mid-document.
+
+    Under `json_schema` the API validates the completion before returning it, so
+    a truncated document is refused as a 400 instead of arriving with
+    `finish_reason == "length"`. Same condition, different report, and telling
+    them apart matters: one is fixed by more room, the other by a better prompt.
+    """
+    if getattr(exc, "status_code", None) != 400:
+        return False
+    text = str(exc).lower()
+    return (
+        "max completion tokens reached" in text
+        or "json_validate_failed" in text
+    )
 
 
 def _is_schema_rejection(exc: Exception) -> bool:

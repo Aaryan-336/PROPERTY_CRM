@@ -78,12 +78,16 @@ class FakeGroq:
     """Records the request shape and returns a canned completion."""
 
     def __init__(self, *, reject_schema: bool = False, error: Exception | None = None,
-                 content: str = PAYLOAD, finish: str = "stop") -> None:
+                 content: str = PAYLOAD, finish: str = "stop",
+                 truncate_below: int | None = None) -> None:
         self.calls: list[dict] = []
         self.reject_schema = reject_schema
         self.error = error
         self.content = content
         self.finish = finish
+        # Stand-in for a real model's behaviour: the response is cut off until
+        # the request reserves enough room for it.
+        self.truncate_below = truncate_below
         self.chat = types.SimpleNamespace(
             completions=types.SimpleNamespace(create=self._create)
         )
@@ -94,6 +98,8 @@ class FakeGroq:
             raise self.error
         if self.reject_schema and kwargs["response_format"]["type"] == "json_schema":
             raise _SchemaRejected()
+        if self.truncate_below is not None and kwargs["max_tokens"] < self.truncate_below:
+            return _response(self.content[:80], "length")
         return _response(self.content, self.finish)
 
 
@@ -192,11 +198,120 @@ def test_auth_failure_is_not_mistaken_for_a_schema_problem():
     assert len(client.calls) == 1
 
 
-def test_truncated_output_raises_rather_than_half_parsing():
-    """A batch cut off at max_tokens must be retried, not marked processed."""
+def test_a_truncated_response_is_retried_with_more_room():
+    """The bug this replaces: a truncated batch was simply given up on.
+
+    The advice it gave -- lower the batch size -- was the opposite of the fix,
+    because the budget is sized *per message*: splitting a truncated batch
+    hands each half a smaller allowance than the one that had just proved too
+    small. A group whose brokers post numbered lists of a dozen flats hit this
+    on every batch, and the queue stopped moving.
+    """
+    client = FakeGroq(truncate_below=3000)
+    results = _extractor(client).extract(ITEMS)
+
+    assert len(results) == 2  # it eventually succeeded
+    budgets = [c["max_tokens"] for c in client.calls]
+    # Started at the estimate and climbed, rather than splitting the batch.
+    assert budgets == sorted(budgets) and budgets[-1] >= 3000
+    assert all(len(c["messages"]) == 2 for c in client.calls)
+
+
+class _TruncatedUnderSchema(Exception):
+    """How Groq actually reports a truncated response in strict-schema mode.
+
+    Not `finish_reason == "length"`: under `json_schema` the API validates the
+    completion before returning it, so output that ran out of room is refused
+    as a 400 that reads like a bad prompt.
+    """
+
+    status_code = 400
+
+    def __str__(self) -> str:
+        return (
+            "Error code: 400 - {'error': {'message': 'Failed to generate JSON. "
+            "Please adjust your prompt.', 'code': 'json_validate_failed', "
+            "'failed_generation': 'max completion tokens reached before "
+            "generating a valid document'}}"
+        )
+
+
+def test_truncation_reported_as_a_400_is_still_truncation():
+    """The signal production actually sends, and the one the first fix missed.
+
+    Verified against the live API: a dense broadcast post under a strict schema
+    comes back as `json_validate_failed`, not as a finish reason. Treated as a
+    prompt problem it is neither retried with more room nor reported honestly,
+    which is exactly how the queue stopped moving.
+    """
+    calls: list[dict] = []
+    client = FakeGroq()
+    real_create = client._create
+
+    def create(**kwargs):
+        calls.append(kwargs)
+        if kwargs["max_tokens"] < 3000:
+            raise _TruncatedUnderSchema()
+        return real_create(**kwargs)
+
+    client.chat.completions.create = create
+
+    results = _extractor(client).extract(ITEMS)
+    assert len(results) == 2
+    budgets = [c["max_tokens"] for c in calls]
+    assert budgets == sorted(budgets) and budgets[-1] >= 3000
+    # It must not be mistaken for a schema rejection and downgraded: JSON mode
+    # constrains syntax, not shape, and would hide the real problem.
+    assert all(c["response_format"]["type"] == "json_schema" for c in calls)
+
+
+def test_a_dense_group_does_not_rediscover_its_size_every_batch():
+    """Ratcheting the estimate, like the schema downgrade before it.
+
+    Without it, brokers who always post numbered lists cost a truncated request
+    on every single batch — which on a free tier is allowance spent on nothing.
+    """
+    client = FakeGroq(truncate_below=3000)
+    extractor = _extractor(client)
+
+    extractor.extract(ITEMS)
+    first_opening = client.calls[0]["max_tokens"]
+
+    client.calls.clear()
+    extractor.extract(ITEMS)
+    second_opening = client.calls[0]["max_tokens"]
+
+    assert second_opening > first_opening
+    assert len(client.calls) == 1, "the second batch should not need a retry"
+
+
+def test_the_ceiling_is_where_it_gives_up_rather_than_climbing_forever():
+    """Truncation must never fall through to the parser: half a JSON document
+    parses as garbage, or worse, as something."""
+    from app.extraction import OUTPUT_CEILING
+
     client = FakeGroq(content=PAYLOAD[:80], finish="length")
-    with pytest.raises(RuntimeError, match="output limit"):
+    with pytest.raises(RuntimeError, match="more than"):
         _extractor(client).extract(ITEMS)
+
+    assert max(c["max_tokens"] for c in client.calls) == OUTPUT_CEILING
+
+
+def test_at_the_ceiling_it_splits_rather_than_shrinking_the_budget():
+    """Only once there is no ceiling left to raise does a smaller batch help --
+    and each half must keep the ceiling, not fall back to the estimate."""
+    from app.extraction import OUTPUT_CEILING
+
+    client = FakeGroq(content=PAYLOAD[:80], finish="length")
+    with pytest.raises(RuntimeError):
+        _extractor(client).extract(ITEMS)
+
+    singles = [c for c in client.calls if len(c["messages"]) == 2]
+    # The batch was eventually broken up, and the halves were tried at the
+    # ceiling rather than at the estimate they had already outgrown.
+    split_calls = [c for c in client.calls if c["max_tokens"] == OUTPUT_CEILING]
+    assert len(split_calls) >= 2
+    assert singles  # sanity: the batch was tried whole first
 
 
 def test_unparseable_output_raises():

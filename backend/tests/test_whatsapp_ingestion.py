@@ -810,3 +810,88 @@ def test_reprocessing_a_message_does_not_inflate_the_repost_count(group):
         )
         assert len(sightings) == 1
     db.close()
+
+
+# ---------------------------------------------------------------------------
+# Requeuing a backlog that failed for one shared reason
+# ---------------------------------------------------------------------------
+
+
+def _set_status(message_id: int, status: str, attempts: int, error: str | None) -> None:
+    from app.db import SessionLocal, system_scope
+    from app.models import WhatsAppMessage
+
+    db = SessionLocal()
+    with system_scope():
+        row = db.get(WhatsAppMessage, message_id)
+        row.status, row.attempts, row.error = status, attempts, error
+        db.commit()
+    db.close()
+
+
+def _status_of(message_id: int) -> tuple[str, int, str | None]:
+    from app.db import SessionLocal, system_scope
+    from app.models import WhatsAppMessage
+
+    db = SessionLocal()
+    with system_scope():
+        row = db.get(WhatsAppMessage, message_id)
+        out = (row.status, row.attempts, row.error)
+    db.close()
+    return out
+
+
+def test_requeueing_failed_messages_clears_the_whole_backlog(client, owner_h, group):
+    """The case retrying one at a time does not cover.
+
+    When extraction was misconfigured or buggy, every message failed for the
+    same reason. The fix lands and the backlog is still there — one press per
+    message is not a recovery path.
+    """
+    ids = [
+        _queue_message(group["id"], f"bulk-retry {i}: 2bhk andheri 85k", f"bulk-{i}")
+        for i in range(3)
+    ]
+    for message_id in ids:
+        _set_status(message_id, "failed", 3, "hit the output limit")
+
+    resp = client.post("/whatsapp/reprocess-failed", headers=owner_h)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["requeued"] >= 3
+
+    for message_id in ids:
+        status, attempts, error = _status_of(message_id)
+        assert status == "pending"
+        # Attempts must be reset, or a message that exhausted its retries is
+        # requeued into a claim filter that will never pick it up again.
+        assert attempts == 0
+        assert error is None
+
+
+def test_requeueing_leaves_messages_that_still_have_retries_alone(
+    client, owner_h, group
+):
+    """A pending message is already in the queue. Resetting its attempts would
+    hide a genuine retry loop instead of helping it."""
+    message_id = _queue_message(group["id"], "still-trying: 1bhk malad", "still-1")
+    _set_status(message_id, "pending", 2, "transient")
+
+    client.post("/whatsapp/reprocess-failed", headers=owner_h)
+
+    assert _status_of(message_id) == ("pending", 2, "transient")
+
+
+def test_requeueing_is_owner_only(client, alice_h):
+    """Same capability as the rest of the feed console."""
+    assert (
+        client.post("/whatsapp/reprocess-failed", headers=alice_h).status_code == 403
+    )
+
+
+def test_requeueing_nothing_is_not_an_error(client, owner_h):
+    """The button is visible whenever failures are; pressing it twice is not a
+    fault."""
+    client.post("/whatsapp/reprocess-failed", headers=owner_h)
+    resp = client.post("/whatsapp/reprocess-failed", headers=owner_h)
+    assert resp.status_code == 200
+    assert resp.json()["requeued"] == 0

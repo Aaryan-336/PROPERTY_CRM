@@ -181,9 +181,24 @@ export function FeedConsole({
 
       {status.failed_last_24h > 0 && (
         <Banner tone="signal">
-          {status.failed_last_24h} message
-          {status.failed_last_24h === 1 ? "" : "s"} could not be read in the last
-          24 hours. They are listed below and can be retried.
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-2">
+            <span>
+              {status.failed_last_24h} message
+              {status.failed_last_24h === 1 ? "" : "s"} could not be read in the
+              last 24 hours.
+            </span>
+            {/* One press for the whole backlog. Retrying individually is right
+                when one message is odd, and useless when extraction was
+                misconfigured and every message failed for the same reason. */}
+            <button
+              type="button"
+              disabled={busyId !== null}
+              onClick={() => call("whatsapp/reprocess-failed", "POST")}
+              className="tap rounded-pill bg-ink px-4 text-xs font-semibold text-white disabled:opacity-50"
+            >
+              Retry all
+            </button>
+          </span>
         </Banner>
       )}
 

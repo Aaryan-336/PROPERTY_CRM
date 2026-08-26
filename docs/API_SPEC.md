@@ -98,6 +98,7 @@ Property list filters also accept `bhk`, `source` (`manual` / `whatsapp_group`) 
 | GET | `/whatsapp/groups` · POST · PATCH · DELETE | Owner only — manage monitored groups. Removal is a soft delete so listings sourced from the group keep their provenance. |
 | GET | `/whatsapp/messages` | Owner only — raw feed with per-message extraction state, for debugging a group producing nothing useful. |
 | POST | `/whatsapp/reprocess/{id}` | Owner only — requeue a message. Raw bodies are stored before parsing precisely so a prompt fix can be replayed over history. |
+| POST | `/whatsapp/reprocess-failed` | Owner only — requeue every message that gave up, returning `{"requeued": n}`. Resets `attempts`, without which a requeued message falls outside the claim filter and is never picked up again. Touches only `failed` rows: a `pending` one still has retries and the worker will reach it. |
 
 ## Lead Scoring & Routing (Phase 3)
 

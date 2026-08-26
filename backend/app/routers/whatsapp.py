@@ -26,7 +26,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, Query, Request
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from app.config import settings
 from app.db import system_scope
@@ -615,6 +615,51 @@ def reprocess_message(
     message.error = None
     db.commit()
     request.state.audit.add(reprocessed=True, message_id=message_id)
+
+
+@router.post(
+    "/whatsapp/reprocess-failed",
+    response_model=None,
+    dependencies=[Depends(require("whatsapp.manage"))],
+)
+def reprocess_failed(scoped: ScopedDep, db: SessionDep, request: Request) -> dict:
+    """Put every message that gave up back in the queue.
+
+    Retrying one at a time is right when one message is odd. It is the wrong
+    tool entirely for the case that actually happens: extraction was
+    misconfigured, or had a bug, and *every* message failed for the same reason
+    — so the fix lands and the backlog is still sitting there, one button press
+    per message.
+
+    Only `failed` rows. A message still `pending` has attempts left and the
+    worker will pick it up on its own; resetting those would hide a genuine
+    retry loop rather than help it.
+    """
+    # Through ScopedQuery like every other read here, not system_scope: this
+    # runs on behalf of a signed-in person, and the one exemption in this file
+    # is the gateway webhook, which has no person behind it.
+    ids = [
+        m.id
+        for m in db.execute(
+            scoped.whatsapp_messages().where(WhatsAppMessage.status == INGEST_FAILED)
+        )
+        .scalars()
+        .all()
+    ]
+    if ids:
+        # synchronize_session=False: the default strategy issues a SELECT to
+        # reconcile loaded objects, and that SELECT carries no scope marker, so
+        # the guard in app/db.py rejects it.
+        db.execute(
+            update(WhatsAppMessage)
+            .where(WhatsAppMessage.id.in_(ids))
+            .values(status=INGEST_PENDING, attempts=0, error=None)
+            .execution_options(synchronize_session=False)
+        )
+        db.commit()
+
+    request.state.audit.add(reprocessed_failed=len(ids))
+    return {"requeued": len(ids)}
 
 
 # ---------------------------------------------------------------------------
