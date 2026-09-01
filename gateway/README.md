@@ -128,6 +128,21 @@ anything else in the CRM, which is the point of it living on its own box.
   gateway never asks WhatsApp for more than an ordinary desktop client gets on
   linking. It now keeps the slice of that it is sent, for watched groups only,
   instead of discarding all of it.
+- **The session outlives the process, by weeks.** Losing the connection is
+  almost never losing the login. `.wa-session/creds.json` holds a linked
+  device; WhatsApp keeps it linked until somebody unlinks it from the phone.
+  If messages stop, check whether the process is running *before* re-pairing --
+  re-pairing an account repeatedly is what gets a number flagged, and it is the
+  one recovery step that cannot be undone.
+- **The gateway no longer exits on a dropped connection.** Baileys throws
+  `Connection Closed` from inside its own async queues when a socket goes away
+  with work in flight, and Node terminates the process on an unhandled
+  rejection. That made every wifi blip a coin toss. `src/resilience.js`
+  classifies those, and a logout (401) is deliberately *not* in that class --
+  it needs a person, and swallowing it would leave the gateway spinning
+  forever. Anything unrecognised is logged loudly and reported to the CRM.
+- **A stall watchdog reconnects after 2 minutes down** if the close handler's
+  own retry never fired.
 - **Never commit `.wa-session/`.** It is the login.
 
 ## Troubleshooting
@@ -135,6 +150,7 @@ anything else in the CRM, which is the point of it living on its own box.
 | Symptom | Cause |
 |---|---|
 | `logged out — the linked device was removed` | Someone unlinked the device from the phone. Delete `.wa-session/` and re-pair. |
+| Ingestion stops with no error in the CRM | Check the process is alive first (`pgrep -f src/index.js`). Historically it exited on a Baileys unhandled rejection after a wifi drop; the log ends in a stack trace and a bare `Node.js v22.x` line. Guarded now — if you see that footer again, the error above it is a new class worth reporting. |
 | `API ignored N unwatched group(s)` | Normal right after removing a group; already-journalled messages are discarded by the API. |
 | `delivery failed … retrying` | API down or the secret does not match `backend/.env`. Messages stay on disk. |
 | Messages arrive but no inventory appears | The extraction worker is not running, or `GROQ_API_KEY` is unset. Check **Inventory feed** in the CRM — it reports both. |

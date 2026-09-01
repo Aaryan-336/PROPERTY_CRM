@@ -55,6 +55,7 @@ import pino from "pino";
 import qrcode from "qrcode-terminal";
 
 import { resumePoint, watchEntry } from "./backfill.js";
+import { isSocketNoise } from "./resilience.js";
 import { config } from "./config.js";
 import {
   appendToOutbox,
@@ -94,9 +95,20 @@ let watched = new Map();
 // started. Reported on the heartbeat so "did the backfill work" is a number
 // somebody can look at rather than an inference from the inventory.
 let backfilled = 0;
+// How long the socket may sit disconnected before the watchdog stops waiting
+// for the reconnect that was supposed to come, and makes one itself. Longer
+// than the close handler's own 5s retry by a wide margin, so the two never
+// race on an ordinary blip.
+const STALL_AFTER_MS = 120_000;
+const STALL_CHECK_MS = 30_000;
+
 // Mirrors the socket state for the heartbeat, which fires on a timer and so
 // cannot read it from the event that last changed it.
 let connected = false;
+// When `connected` last flipped either way. The watchdog measures from here,
+// so "down for two minutes" means two minutes of actually being down rather
+// than two minutes since the process started.
+let lastConnectionChange = Date.now();
 // When the current socket came up, in epoch milliseconds. Used to date a
 // pairing request against the connection, so a request made while this process
 // was down is not allowed to tear down the session it then established.
@@ -327,6 +339,7 @@ async function connect() {
       log.info("connected to WhatsApp");
       connected = true;
       connectedAt = Date.now();
+      lastConnectionChange = Date.now();
       currentState = "connected";
       currentJid = sock.user?.id ?? null;
       void reportSession({
@@ -368,6 +381,7 @@ async function connect() {
       const restartRequired = status === DisconnectReason.restartRequired;
       connected = false;
       connectedAt = null;
+      lastConnectionChange = Date.now();
       currentState = loggedOut
         ? "logged_out"
         : restartRequired
@@ -516,6 +530,7 @@ async function startFreshPairing() {
     log.warn("re-pair requested from the CRM; clearing the saved session");
     connected = false;
     connectedAt = null;
+    lastConnectionChange = Date.now();
     currentState = "connecting";
     void reportSession({ state: "connecting", last_error: null });
 
@@ -709,6 +724,8 @@ function reportSessionStorage() {
 
 async function main() {
   log.info(`gateway starting; API ${config.apiBase}`);
+  // First, before a socket exists to throw at us.
+  installCrashGuards();
   reportSessionStorage();
 
   if (!PAIR_ONLY && !LIST_GROUPS) {
@@ -722,6 +739,9 @@ async function main() {
     // this process has no public address -- it can sit on a laptop behind NAT
     // and still be driven from a phone.
     setInterval(() => void pollCommands(), config.commandPollMs);
+
+    // Last line of defence: reconnect a socket nobody else came back for.
+    startStallWatchdog();
 
     // Heartbeat, so the CRM can tell "connected" from "was connected when this
     // process died". Socket events alone cannot: a killed gateway sends no
@@ -765,6 +785,92 @@ async function main() {
       if (shuttingDown) return;
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Staying alive
+// ---------------------------------------------------------------------------
+
+/**
+ * Never die of a dropped connection.
+ *
+ * This is the single most important thing in the file, and it was missing.
+ *
+ * Node terminates the process on an unhandled promise rejection, and Baileys
+ * produces them as a matter of routine whenever a socket closes with work in
+ * flight. So every wifi blip was a coin toss: usually the close event arrived
+ * first and the gateway reconnected, occasionally an in-flight send lost the
+ * race and the whole process exited. The WhatsApp session was never the
+ * casualty -- it survives on disk, and the linked device stays linked for
+ * weeks -- but a dead process ingests nothing, and it dies quietly. What the
+ * owner sees is "WhatsApp stopped working again", which is why this looked
+ * like a login problem for so long.
+ *
+ * Staying up is close to always right here. The gateway keeps almost no state
+ * in memory: messages are journalled to disk the moment they arrive, the watch
+ * list is re-fetched on a timer, and the socket is rebuilt from creds on disk.
+ * There is very little that a surprise exception can have corrupted, and a
+ * great deal that stopping costs.
+ */
+function installCrashGuards() {
+  process.on("unhandledRejection", (reason) => {
+    if (shuttingDown) return;
+    if (isSocketNoise(reason)) {
+      // Expected. `connection.update` reconnects; nothing else to do, and
+      // saying it at warn on every wifi blip would train the owner to ignore
+      // the log.
+      log.debug(`ignored a closed-socket rejection: ${reason?.message}`);
+      return;
+    }
+    log.error(
+      `unhandled rejection (staying up): ${reason?.stack || reason?.message || reason}`,
+    );
+    void reportSession({
+      state: currentState,
+      last_error: `unhandled rejection: ${reason?.message || reason}`,
+    });
+  });
+
+  process.on("uncaughtException", (error) => {
+    if (shuttingDown) return;
+    if (isSocketNoise(error)) {
+      log.debug(`ignored a closed-socket exception: ${error.message}`);
+      return;
+    }
+    // Node's own advice is that state may be undefined after this. For this
+    // process that risk is small and the alternative is worse: exiting means
+    // no ingestion until somebody notices, and nothing here notices.
+    log.error(`uncaught exception (staying up): ${error.stack || error.message}`);
+    void reportSession({
+      state: currentState,
+      last_error: `uncaught exception: ${error.message}`,
+    });
+  });
+}
+
+/**
+ * Reconnect if the socket has been down long enough that nobody is coming.
+ *
+ * The close handler covers the disconnects it is told about. This covers the
+ * ones it is not -- a socket that stops delivering without emitting `close`, a
+ * reconnect timer lost to a crash guard, a machine resuming from sleep with a
+ * socket that believes it is still open. Cheap, and the difference between
+ * "the gateway recovers by itself" and "the gateway recovers when the owner
+ * remembers to look at it".
+ */
+function startStallWatchdog() {
+  setInterval(() => {
+    if (shuttingDown || repairing || connected) return;
+    const downFor = Date.now() - (lastConnectionChange || 0);
+    if (downFor < STALL_AFTER_MS) return;
+    log.warn(
+      `socket has been down ${Math.round(downFor / 1000)}s with no recovery; reconnecting`,
+    );
+    lastConnectionChange = Date.now(); // do not stampede if connect() is slow
+    void connect().catch((error) =>
+      log.error(`watchdog reconnect failed: ${error.message}`),
+    );
+  }, STALL_CHECK_MS).unref?.();
 }
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
