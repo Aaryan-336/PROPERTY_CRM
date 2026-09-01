@@ -781,6 +781,55 @@ def test_pipeline_extracts_several_listings_from_one_message(group):
     assert stats.properties_created == 2
 
 
+def test_one_message_offering_the_same_flat_twice_does_not_fail(group):
+    """A building's availability list that repeats a unit must not kill the message.
+
+    Observed live on 1 Sep: "*Available Flats for Sale in Malad Goregaon West*
+    -- Shreeji Atlantis ..." failed with
+
+        UniqueViolation: duplicate key value violates unique constraint
+        "uq_property_source"
+
+    Two entries in the one message resolved to a single property. The
+    idempotency check in `_attach_source` could not see the first sighting
+    because the session is `autoflush=False` and it was still pending, so a
+    second was added and the pair collided at commit.
+
+    The cost was the whole message: the constraint aborts the flush, so every
+    listing in it was lost -- including the ones that were perfectly fine.
+    """
+    body = "pipeline-dup-source: Shreeji Atlantis 2bhk 1.85cr (listed twice)"
+    message_id = _queue_message(group["id"], body, "pipe-dup-source-1")
+
+    same = dict(
+        building="Shreeji Atlantis",
+        location="Malad West",
+        bhk="2BHK",
+        price="1.85 Cr",
+        area="720 sqft",
+    )
+    stats = _run(StubExtractor({body: MessageExtraction(
+        message_ref="", is_listing=True, reason="two entries, one flat",
+        listings=[_listing(**same), _listing(**same)])}))
+
+    # One property, one sighting, and above all a message that survived.
+    assert stats.properties_created == 1
+    assert _get_message(message_id)["status"] == "extracted"
+
+    from app.db import SessionLocal, system_scope
+    from app.models import PropertySource
+
+    db = SessionLocal()
+    with system_scope():
+        sightings = (
+            db.query(PropertySource)
+            .filter(PropertySource.message_id == message_id)
+            .count()
+        )
+    db.close()
+    assert sightings == 1, "one message saw the property once, not twice"
+
+
 def test_pipeline_drops_a_listing_with_no_locality(group):
     """Unsearchable inventory is noise, so it is rejected rather than stored."""
     body = "pipeline-nowhere: 3bhk available good deal"

@@ -333,6 +333,27 @@ def _attach_source(
     if existing:
         return
 
+    # The same check against sightings this transaction has not written yet.
+    #
+    # The session is `autoflush=False`, so the SELECT above sees only what is
+    # committed -- a sighting added moments ago, for a *different* flat in this
+    # same message, is still sitting in `db.new` and is invisible to it. One
+    # message routinely carries several flats, and when two of them resolve to
+    # one property (two units of the same configuration in one tower, a repost
+    # of a building's whole availability list) the second add used to collide
+    # with the first at commit.
+    #
+    # It failed loudly and expensively: uq_property_source aborts the flush, so
+    # the message failed as a whole and every listing in it was lost, including
+    # the ones that had nothing wrong with them.
+    for pending in db.new:
+        if (
+            isinstance(pending, PropertySource)
+            and pending.property_id == prop.id
+            and pending.message_id == message.id
+        ):
+            return
+
     db.add(
         PropertySource(
             property_id=prop.id,
