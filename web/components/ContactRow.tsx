@@ -9,15 +9,26 @@ import type { Contact } from "@/lib/types";
 export function ContactRow({
   contact,
   compact = false,
+  index,
 }: {
   contact: Contact;
   compact?: boolean;
+  /** Position in the list, for the staggered entrance. Omitted on the short
+   *  home-screen lists, where a deal-out reads as fussy rather than alive. */
+  index?: number;
 }) {
   return (
-    <li>
+    <li
+      className={index === undefined ? undefined : "animate-rise"}
+      style={
+        index === undefined
+          ? undefined
+          : ({ "--i": index } as React.CSSProperties)
+      }
+    >
       <Link
         href={`/contacts/${contact.id}`}
-        className="flex items-center gap-3 py-3 transition-opacity hover:opacity-80"
+        className="press-soft list-row -mx-2 flex items-center gap-3 rounded-tile px-2 py-3 hover:bg-parchment-deep/50"
       >
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">

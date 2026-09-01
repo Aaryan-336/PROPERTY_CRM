@@ -84,7 +84,9 @@
 }
 
 @layer utilities {
-  /* Minimum 44×44px tap targets on fast-logging controls. */
+  /* Minimum 44×44px tap targets on fast-logging controls.
+     Also the app's marker for "a thumb presses this", which is why the press
+     feedback below hangs off it rather than being applied at 88 call sites. */
   .tap {
     min-height: 44px;
     min-width: 44px;
@@ -136,6 +138,65 @@
   .hairline {
     border-color: var(--color-hairline);
   }
+
+  /* ----------------------------------------------------------------- press
+
+     The app sets `-webkit-tap-highlight-color: transparent`, which removes the
+     grey box iOS paints on tap. That was right -- the grey box is ugly and
+     off-palette -- but nothing replaced it, so for a while every tap in the
+     app produced no acknowledgement at all until the next screen arrived. On a
+     phone that reads as broken rather than minimal: the thumb has left the
+     glass and nothing has happened yet.
+
+     Fast in, slow out. The press must land under the finger (80ms is below the
+     threshold where a delay is felt), and the release eases back over a longer
+     curve so it reads as a physical spring rather than a state flip. Getting
+     these two the same length is what makes web apps feel rubbery.
+
+     Only `transform` is animated, so this stays on the compositor and never
+     triggers layout or paint -- it costs nothing on a mid-range Android.
+  */
+  .tap:where(:not(input, textarea, select)),
+  .press,
+  .press-soft {
+    transition:
+      transform 220ms cubic-bezier(0.2, 0.8, 0.25, 1),
+      background-color 180ms ease,
+      box-shadow 220ms ease;
+  }
+
+  /* Fields are excluded, and the exclusion is the whole reason this is written
+     out. `.tap` marks a 44px target, and a text input is one -- so hanging the
+     press off `.tap` alone made every input shrink as the caret landed in it,
+     which reads as the field rejecting the tap rather than accepting it. A
+     control is pressed; a field is entered. `:where()` contributes no
+     specificity, so `.press-soft` below still wins on source order. */
+  .tap:where(:not(input, textarea, select)):active,
+  .press:active,
+  .press-soft:active {
+    transform: scale(0.97);
+    transition-duration: 80ms;
+  }
+
+  /* Scale reads as a proportion of the element, so one number cannot serve
+     every size. A 44px icon at 0.97 is a firm press; a full-width card at 0.97
+     travels ten pixels and looks like it is collapsing. Ordered after the rule
+     above so a large surface can opt down to a movement the eye reads as the
+     same gesture.
+
+     Only `transform` is animated, so all of this stays on the compositor: no
+     layout, no repaint, nothing measurable on a mid-range Android. */
+  .press-soft:active {
+    transform: scale(0.985);
+  }
+
+  /* Long lists: let the browser skip layout and paint for rows that are not
+     on screen yet. `contain-intrinsic-size` supplies a placeholder height so
+     the scrollbar does not jump around as real heights are discovered. */
+  .list-row {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 88px;
+  }
 }
 
 /* The Journey Timeline's connecting rail. Drawn with a gradient so the line
@@ -167,9 +228,59 @@
   animation: slide-up 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* Entrance. Content arrives rather than appearing -- 8px and 260ms, below the
+   level anyone would call an animation, but the difference between a screen
+   that materialises and one that cuts. `--i` staggers a list by index; the cap
+   keeps a fifty-row list from having its last row wait a second and a half. */
+@keyframes rise {
+  from { transform: translateY(10px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+.animate-rise {
+  animation: rise 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(min(var(--i, 0), 8) * 40ms);
+}
+
+/* Skeletons, for the moment between a tap and the server answering. A sweep
+   rather than a pulse: a pulse says "wait", a sweep says "loading", and the
+   direction of travel is what distinguishes the two. */
+@keyframes sweep {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-parchment-deep) 25%,
+    color-mix(in srgb, var(--color-parchment-deep) 55%, white) 50%,
+    var(--color-parchment-deep) 75%
+  );
+  background-size: 200% 100%;
+  animation: sweep 1.4s linear infinite;
+  border-radius: 8px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+  }
+
+  /* Reduced motion is a request to stop things moving, not a request to stop
+     the interface answering. A press still has to be acknowledged, so the
+     scale is dropped and a brightness shift takes its place -- the same
+     information, delivered without movement. */
+  .tap:where(:not(input, textarea, select)):active,
+  .press:active,
+  .press-soft:active {
+    transform: none;
+    filter: brightness(0.94);
+  }
+
+  .skeleton {
+    animation: none;
+    background: var(--color-parchment-deep);
   }
 }

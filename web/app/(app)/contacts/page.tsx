@@ -144,8 +144,8 @@ export default async function ContactsPage({
               an advantage rather than a burden. */}
           <Card className="px-5 lg:hidden">
             <ul className="divide-y divide-hairline">
-              {contacts.items.map((contact) => (
-                <ContactRow key={contact.id} contact={contact} />
+              {contacts.items.map((contact, i) => (
+                <ContactRow key={contact.id} contact={contact} index={i} />
               ))}
             </ul>
           </Card>

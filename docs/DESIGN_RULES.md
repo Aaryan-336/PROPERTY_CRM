@@ -52,6 +52,53 @@ Mobile is the primary target (field agents, cold callers), but the Owner realist
 - **The Journey Timeline signature element stays vertical even on desktop** — don't rotate it horizontal just because there's width available; a horizontal stepper loses the "package tracker" legibility that makes it work, and consistency between mobile and desktop matters for a small team that'll use both.
 - **Agent and Cold Caller flows stay functionally mobile-first even on desktop** — same one-primary-action-per-screen, fast-logging forms — just laid out with more breathing room and a persistent sidebar instead of full-bleed mobile screens. Don't add extra fields or complexity just because desktop has space; the workflow speed rules still apply.
 
+## Motion and touch feedback
+
+The palette and the type were specified from the start; the *response* to a
+finger was not, and its absence is what made the mobile build feel inert. The
+app sets `-webkit-tap-highlight-color: transparent`, which correctly removes
+iOS's off-palette grey box — but for a long time nothing replaced it, so a tap
+produced no acknowledgement at all until the next screen arrived. On a phone
+that does not read as restraint, it reads as a dead control.
+
+The rules, all CSS, no animation library:
+
+- **Every control answers the thumb.** `.tap` — already the marker for a 44px
+  target — carries a `scale(0.97)` press. **Fast in, slow out**: 80ms down so
+  the press lands under the finger, 220ms back on an ease-out so the release
+  reads as a spring. Equal durations are what make web apps feel rubbery.
+- **Scale is proportional to the element.** A 44px icon at `0.97` is a firm
+  press; a full-width card at `0.97` travels ten pixels and looks like it is
+  collapsing. Large surfaces use `.press-soft` (`0.985`) to read as the *same*
+  gesture.
+- **Fields are entered, not pressed.** Inputs, textareas and selects are
+  excluded — a field that shrinks as the caret lands in it reads as rejecting
+  the tap.
+- **Only `transform` and `opacity` animate.** Everything stays on the
+  compositor: no layout, no repaint, nothing measurable on a mid-range Android.
+- **Navigation is acknowledged before it completes.** `useLinkStatus` lights
+  the tapped dock item in the destination's own active styling the instant it
+  is pressed, rather than when the page arrives. Not a spinner: a spinner
+  explains that the app is working, where adopting the destination's styling
+  answers the only question the thumb is asking.
+- **`loading.tsx` holds the frame.** Skeletons render inside the app shell, so
+  the header and dock never flicker. This makes nothing faster; it removes the
+  interval where a tap has registered and the screen has not admitted it, which
+  on a sleeping free-tier API runs to seconds.
+- **Skeletons sweep, they do not pulse.** A pulse says "wait"; a sweep says
+  "loading". The direction of travel is the difference.
+- **Lists deal themselves out**, 10px and 260ms staggered by index and capped
+  at eight, so row forty does not wait its turn. Used on the two primary lists
+  only — on a four-row home-screen summary the same effect reads as fussy.
+- **Reduced motion still gets an answer.** `prefers-reduced-motion` is a
+  request to stop things moving, not to stop the interface responding: the
+  press drops the scale and substitutes a brightness shift, carrying the same
+  information without movement.
+
+Budget: the whole interaction layer is **under 2KB of CSS** and adds no
+JavaScript dependency. If a future change to this needs a motion library, that
+is the signal it has gone too far.
+
 ## Mobile-first interaction principles
 
 - **Design for the smallest screen first**, then expand — not the reverse. Every core action (log a call, log a site visit, add a remark) must work perfectly at ~375px width before the laptop layout is considered.

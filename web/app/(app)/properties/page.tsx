@@ -155,9 +155,17 @@ export default async function PropertiesPage({
       ) : (
         <>
           <div className="grid gap-2.5 [&>*]:min-w-0 lg:hidden">
-            {properties.items.map((property) => (
-              <Link key={property.id} href={`/properties/${property.id}`}>
-                <Card className="p-4">
+            {properties.items.map((property, i) => (
+              <Link
+                key={property.id}
+                href={`/properties/${property.id}`}
+                // `--i` staggers the entrance by position, so the list deals
+                // itself out rather than appearing all at once. Capped in CSS,
+                // so row forty does not wait its turn.
+                style={{ "--i": i } as React.CSSProperties}
+                className="animate-rise list-row block"
+              >
+                <Card className="press-soft p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="truncate text-[15px] font-semibold text-ink">

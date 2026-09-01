@@ -63,6 +63,49 @@ export const TEMPERATURE_TONE: Record<string, Tone> = {
   cold: "neutral",
 };
 
+/* -------------------------------------------------------------- skeletons */
+
+/**
+ * A placeholder with the shape of the thing that is coming.
+ *
+ * The API is on a free tier that sleeps, so the gap between a tap and a screen
+ * is sometimes seconds. A spinner in the middle of an empty page says only
+ * "wait"; a block where the row will be says "a row is coming, this many of
+ * them, about this wide" -- and because the layout does not change when the
+ * data lands, the screen resolves instead of reflowing.
+ */
+export function Skeleton({
+  className = "",
+  width,
+}: {
+  className?: string;
+  width?: string;
+}) {
+  return (
+    <span
+      aria-hidden
+      className={`skeleton block h-3.5 ${className}`}
+      style={width ? { width } : undefined}
+    />
+  );
+}
+
+/** A stand-in for one list row, matched to the real row's height and rhythm. */
+export function SkeletonRow() {
+  return (
+    <div className="rounded-card border border-hairline bg-card p-4">
+      <div className="flex items-center gap-3">
+        <span className="skeleton h-10 w-10 shrink-0 rounded-full" aria-hidden />
+        <div className="min-w-0 flex-1 space-y-2">
+          <Skeleton width="55%" />
+          <Skeleton className="h-3" width="35%" />
+        </div>
+        <span className="skeleton h-6 w-16 shrink-0 rounded-pill" aria-hidden />
+      </div>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ cards */
 
 export function Card({

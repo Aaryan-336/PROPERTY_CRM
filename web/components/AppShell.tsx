@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
@@ -78,6 +78,53 @@ function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+/**
+ * The dock icon, lit the moment the link is tapped rather than when the page
+ * arrives.
+ *
+ * `useLinkStatus` reports a navigation this link started and has not finished.
+ * It only works inside a `<Link>`, which is why the coloured pill lives in
+ * here rather than on the link itself.
+ *
+ * Treating pending exactly like active is the point. The alternative -- a
+ * spinner, or a third colour -- explains that the app is working. Adopting the
+ * destination's own styling instead says the tap landed, which is the only
+ * question the thumb is asking, and it means the transition into the real page
+ * has nothing left to change.
+ */
+function DockIcon({
+  Icon,
+  active,
+}: {
+  Icon: (p: { className?: string }) => ReactNode;
+  active: boolean;
+}) {
+  const { pending } = useLinkStatus();
+  const lit = active || pending;
+  return (
+    <span
+      className={`flex h-11 items-center justify-center rounded-pill px-4 transition-colors duration-150 ${
+        lit ? "bg-sandstone text-white" : "text-ink-dim"
+      }`}
+    >
+      <Icon className="h-[22px] w-[22px]" />
+    </span>
+  );
+}
+
+/** The same acknowledgement for the laptop rail, where a full-width row
+ *  turning sandstone would be far too loud for a mouse click. */
+function PendingDot() {
+  const { pending } = useLinkStatus();
+  if (!pending) return null;
+  return (
+    <span
+      aria-hidden
+      className="skeleton ml-auto h-1.5 w-1.5 shrink-0 rounded-full"
+    />
+  );
+}
+
 export function AppShell({ user, children }: { user: User; children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -125,7 +172,7 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
                 key={href}
                 href={href}
                 aria-current={active ? "page" : undefined}
-                className={`flex items-center gap-3 rounded-tile px-3 py-2.5 text-sm transition-colors ${
+                className={`press flex items-center gap-3 rounded-tile px-3 py-2.5 text-sm transition-colors ${
                   active
                     ? "bg-sandstone font-semibold text-white"
                     : "text-ink-dim hover:bg-ink-soft hover:text-white"
@@ -133,6 +180,7 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
               >
                 <Icon className="h-[18px] w-[18px]" />
                 {label}
+                <PendingDot />
               </Link>
             );
           })}
@@ -148,7 +196,7 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
           </div>
           <button
             onClick={signOut}
-            className="tap mt-3 flex w-full items-center justify-center gap-2 rounded-pill border border-ink-line px-3 text-xs font-semibold text-ink-dim transition-colors hover:border-signal hover:text-signal"
+            className="press tap mt-3 flex w-full items-center justify-center gap-2 rounded-pill border border-ink-line px-3 text-xs font-semibold text-ink-dim transition-colors hover:border-signal hover:text-signal"
           >
             <LogoutIcon className="h-4 w-4" />
             Sign out
@@ -173,7 +221,7 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
           <button
             onClick={signOut}
             aria-label="Sign out"
-            className="tap flex items-center justify-center rounded-full border border-hairline bg-card text-slate"
+            className="press tap flex items-center justify-center rounded-full border border-hairline bg-card text-slate"
           >
             <LogoutIcon className="h-4 w-4" />
           </button>
@@ -192,22 +240,17 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
         className="safe-bottom fixed inset-x-0 bottom-0 z-40 flex justify-center px-4 lg:hidden"
       >
         <div className="flex items-center gap-1 rounded-pill bg-ink px-2 py-2 shadow-float">
-          {mobileItems.map(({ href, label, icon: Icon }) => {
-            const active = isActive(pathname, href);
-            return (
-              <Link
-                key={href}
-                href={href}
-                aria-label={label}
-                aria-current={active ? "page" : undefined}
-                className={`tap flex items-center justify-center rounded-pill px-4 transition-colors ${
-                  active ? "bg-sandstone text-white" : "text-ink-dim"
-                }`}
-              >
-                <Icon className="h-[22px] w-[22px]" />
-              </Link>
-            );
-          })}
+          {mobileItems.map(({ href, label, icon: Icon }) => (
+            <Link
+              key={href}
+              href={href}
+              aria-label={label}
+              aria-current={isActive(pathname, href) ? "page" : undefined}
+              className="press tap flex items-center justify-center rounded-pill"
+            >
+              <DockIcon Icon={Icon} active={isActive(pathname, href)} />
+            </Link>
+          ))}
 
           {overflowItems.length > 0 && (
             <button
@@ -215,7 +258,7 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
               onClick={() => setMoreOpen(true)}
               aria-label="More"
               aria-expanded={moreOpen}
-              className={`tap flex items-center justify-center rounded-pill px-4 transition-colors ${
+              className={`press tap flex items-center justify-center rounded-pill px-4 transition-colors ${
                 overflowItems.some((item) => isActive(pathname, item.href))
                   ? "bg-sandstone text-white"
                   : "text-ink-dim"
@@ -244,7 +287,7 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
                 <Link
                   href={href}
                   aria-current={active ? "page" : undefined}
-                  className={`tap flex items-center gap-3 rounded-tile border px-4 text-sm font-semibold transition-colors ${
+                  className={`press-soft tap flex items-center gap-3 rounded-tile border px-4 text-sm font-semibold transition-colors ${
                     active
                       ? "border-ink bg-ink text-white"
                       : "border-hairline bg-card text-ink"
