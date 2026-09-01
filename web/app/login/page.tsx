@@ -10,7 +10,11 @@ export default async function LoginPage({
   const { expired } = await searchParams;
 
   return (
-    <main className="flex min-h-dvh flex-col justify-center bg-parchment px-5 py-10">
+    <main
+      className="flex min-h-dvh flex-col justify-center bg-parchment px-5
+                 pb-[max(2.5rem,calc(env(safe-area-inset-bottom)+1rem))]
+                 pt-[max(2.5rem,calc(env(safe-area-inset-top)+1rem))]"
+    >
       <div className="mx-auto w-full max-w-sm">
         <div className="mb-8">
           <p className="font-display text-3xl leading-none text-ink">Balaji</p>

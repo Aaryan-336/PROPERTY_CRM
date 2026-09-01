@@ -54,6 +54,7 @@ import {
 import pino from "pino";
 import qrcode from "qrcode-terminal";
 
+import { resumePoint, watchEntry } from "./backfill.js";
 import { config } from "./config.js";
 import {
   appendToOutbox,
@@ -84,8 +85,15 @@ const GROUP_FILTER = process.argv
   .trim()
   .toLowerCase();
 
-/** group_jid -> name, refreshed from the API so the CRM stays authoritative. */
+/**
+ * group_jid -> { name, lastMessageAt }, refreshed from the API so the CRM
+ * stays authoritative about both what to read and where to resume.
+ */
 let watched = new Map();
+// Messages recovered from history rather than heard live, since this process
+// started. Reported on the heartbeat so "did the backfill work" is a number
+// somebody can look at rather than an inference from the inventory.
+let backfilled = 0;
 // Mirrors the socket state for the heartbeat, which fires on a timer and so
 // cannot read it from the event that last changed it.
 let connected = false;
@@ -117,7 +125,11 @@ let lastDirectorySync = 0;
 async function refreshWatchedGroups() {
   try {
     const groups = await fetchWatchedGroups();
-    watched = new Map(groups.map((g) => [g.group_jid, g.name]));
+    // `watchEntry` carries the resume point: the newest message the CRM has
+    // stored for this group, or null for one that has never delivered
+    // anything -- which `resumePoint` reads as "no resume point, use the age
+    // window", so switching a group on does not drag its history in.
+    watched = new Map(groups.map((g) => [g.group_jid, watchEntry(g)]));
     log.info(`watching ${watched.size} group(s)`);
   } catch (error) {
     // Keep the previous list rather than going deaf. A CRM restart must not
@@ -192,7 +204,23 @@ function textOf(message) {
   );
 }
 
-function handleMessage(message) {
+/** Thin binding of the tested `resumePoint` to this process's config. */
+function cutoffFor(remoteJid) {
+  return resumePoint(watched.get(remoteJid), {
+    maxMessageAgeMs: config.maxMessageAgeMs,
+    backfillMaxAgeMs: config.backfillMaxAgeMs,
+    now: Date.now(),
+  });
+}
+
+/**
+ * @param message  a Baileys message envelope
+ * @param source   "live" for traffic arriving now, "backfill" for anything
+ *                 replayed out of history. Only affects logging: both paths
+ *                 apply the same cutoff, and the API deduplicates on
+ *                 `wa_message_id`, so an overlap costs nothing.
+ */
+function handleMessage(message, source = "live") {
   const remoteJid = message.key?.remoteJid;
   if (!remoteJid || !remoteJid.endsWith("@g.us")) return; // groups only
   if (!watched.has(remoteJid)) return;
@@ -202,11 +230,21 @@ function handleMessage(message) {
   if (!body || !body.trim()) return;
 
   const timestamp = Number(message.messageTimestamp) * 1000;
-  if (timestamp && Date.now() - timestamp > config.maxMessageAgeMs) {
-    // Scrollback replayed on a fresh pairing. Re-extracting weeks of dead
-    // listings costs money and fills inventory with flats that are long gone.
+  if (!timestamp && source === "backfill") {
+    // An undated message out of history cannot be placed against the resume
+    // point, and the failure is asymmetric: guessing "new" on a replay of six
+    // months of scrollback forwards all of it. Live traffic is different --
+    // it is arriving now, so undated still means new.
     return;
   }
+  if (timestamp && timestamp <= cutoffFor(remoteJid)) {
+    // Already stored, or older than we are willing to reach back for.
+    // Re-extracting dead listings costs money and fills the inventory with
+    // flats that were let months ago.
+    return;
+  }
+
+  if (source === "backfill") backfilled += 1;
 
   appendToOutbox({
     wa_message_id: message.key.id,
@@ -246,11 +284,19 @@ async function connect() {
     // the phone and in whatever WhatsApp records server-side; there is no
     // reason to be the one device on the account that looks automated.
     browser: Browsers.macOS("Desktop"),
-    // Belt and braces with syncFullHistory. A fresh pairing otherwise pulls
-    // months of scrollback across hundreds of groups in a burst — the single
-    // most abnormal-looking thing a new device can do, and useless here since
-    // MAX_MESSAGE_AGE_MS discards it anyway.
-    shouldSyncHistoryMessage: () => false,
+    // Which of the history the phone pushes is worth decoding.
+    //
+    // Note what this does *not* do: `syncFullHistory` stays false, so the
+    // gateway still never asks WhatsApp for more than an ordinary desktop
+    // client gets on linking. Requesting months of scrollback across hundreds
+    // of groups is the single most abnormal-looking thing a new device can do,
+    // and that request is still not made. This only stops us throwing away the
+    // slice we are already sent -- and only for the groups the owner picked.
+    // Everything that survives here still has to clear the resume point.
+    shouldSyncHistoryMessage: (message) => {
+      const jid = message?.key?.remoteJid;
+      return Boolean(jid && watched.has(jid));
+    },
   });
 
   socket = sock;
@@ -371,15 +417,39 @@ async function connect() {
 
   sock.ev.on("messages.upsert", ({ messages, type }) => {
     if (mine !== generation) return;
-    // 'notify' is live traffic; 'append' is history sync, which we skip so a
-    // reconnect does not re-ingest the backlog.
-    if (type !== "notify") return;
+    // 'notify' is live traffic and the offline queue WhatsApp holds while a
+    // device is away; 'append' is backfill. Both are forwarded now -- the
+    // resume point decides what is new, which it can do per group, where a
+    // blanket "ignore all history" could only ever be right or wrong for all
+    // of them at once. Anything already stored comes back as a duplicate at
+    // the API and is dropped there.
     for (const message of messages) {
       try {
-        handleMessage(message);
+        handleMessage(message, type === "notify" ? "live" : "backfill");
       } catch (error) {
         log.warn(`could not handle message: ${error.message}`);
       }
+    }
+  });
+
+  // The bulk backfill a linked device receives after connecting. Same filter,
+  // same cutoff, same outbox -- this is only a second door into the same room.
+  sock.ev.on("messaging-history.set", ({ messages }) => {
+    if (mine !== generation) return;
+    if (!messages?.length) return;
+    const before = backfilled;
+    for (const message of messages) {
+      try {
+        handleMessage(message, "backfill");
+      } catch (error) {
+        log.warn(`could not handle history message: ${error.message}`);
+      }
+    }
+    const kept = backfilled - before;
+    if (kept > 0) {
+      log.info(`recovered ${kept} message(s) from history (${messages.length} offered)`);
+    } else {
+      log.debug(`history sync offered ${messages.length} message(s), none new`);
     }
   });
 
@@ -582,6 +652,9 @@ function startHealthServer() {
             ? {
                 state: currentState,
                 watching: watched.size,
+                // How much of this process's traffic was recovered rather than
+                // heard live. A reconnect that closed a real gap says so here.
+                backfilled,
                 uptime_seconds: Math.round(process.uptime()),
               }
             : { error: "not_found" },

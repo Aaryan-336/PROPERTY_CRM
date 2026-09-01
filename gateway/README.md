@@ -112,9 +112,22 @@ anything else in the CRM, which is the point of it living on its own box.
 - **Media without a caption is skipped** — the pipeline extracts from text. A
   photo of a flat with the details typed underneath works fine; a bare photo
   has nothing to read.
-- **Messages older than `MAX_MESSAGE_AGE_MS` (default 24h) are ignored on
-  connect**, so a fresh pairing does not replay weeks of scrollback and
-  re-extract listings that are long gone. Raise it for a one-off backfill.
+- **Reconnecting resumes where the CRM stopped.** On connect the gateway reads
+  a watermark per group from `/internal/whatsapp/groups` -- the newest message
+  the CRM has actually stored -- and forwards everything posted since. A laptop
+  that slept through the weekend catches up on it instead of losing it. The
+  watermark lives in the database rather than on this box, because this box is
+  the half that sleeps.
+- **`BACKFILL_MAX_AGE_MS` (default 7 days) caps how far a resume reaches.** A
+  group quiet for longer than this resumes from the cap, so switching a dormant
+  group back on cannot replay a quarter of dead listings.
+- **`MAX_MESSAGE_AGE_MS` (default 24h) applies only where there is no
+  watermark** -- a fresh pairing, or a group just added. That is history rather
+  than a gap, so it stays out. Raise it for a one-off backfill of a new group.
+- **History is filtered, not requested.** `syncFullHistory` stays off: the
+  gateway never asks WhatsApp for more than an ordinary desktop client gets on
+  linking. It now keeps the slice of that it is sent, for watched groups only,
+  instead of discarding all of it.
 - **Never commit `.wa-session/`.** It is the login.
 
 ## Troubleshooting
@@ -125,3 +138,4 @@ anything else in the CRM, which is the point of it living on its own box.
 | `API ignored N unwatched group(s)` | Normal right after removing a group; already-journalled messages are discarded by the API. |
 | `delivery failed … retrying` | API down or the secret does not match `backend/.env`. Messages stay on disk. |
 | Messages arrive but no inventory appears | The extraction worker is not running, or `GROQ_API_KEY` is unset. Check **Inventory feed** in the CRM — it reports both. |
+| Reconnected but the gap was not filled | The group had no watermark (nothing ever stored), so the 24h window applied — or the gap was wider than `BACKFILL_MAX_AGE_MS`. `GET /healthz` reports `backfilled`. |

@@ -328,6 +328,82 @@ def _payload(group_jid: str, wa_id: str, body: str = "3bhk lodha amara 1.35cr"):
     }
 
 
+# ---------------------------------------------------------------------------
+# The gateway's resume point
+# ---------------------------------------------------------------------------
+
+
+def test_the_watch_list_carries_no_resume_point_for_a_silent_group(
+    client, ingest_secret, group
+):
+    """A group switched on but never delivered from has nothing to resume from.
+
+    The gateway reads null as "use the age window", which is what stops adding
+    a group from dragging its whole scrollback into the inventory.
+    """
+    resp = client.get("/internal/whatsapp/groups", headers=_sign(b""))
+    assert resp.status_code == 200
+    rows = {g["group_jid"]: g for g in resp.json()["groups"]}
+    assert rows[group["jid"]]["last_message_at"] is None
+
+
+def test_the_watch_list_reports_where_the_group_left_off(
+    client, ingest_secret, group
+):
+    """The resume point after a disconnect: the newest message actually stored.
+
+    This is the whole mechanism behind "catch up on what I missed" -- the
+    gateway's disk cannot be trusted to remember (a laptop sleeps, and the
+    host restores its filesystem from the repo on deploy), so the database
+    is what remembers.
+    """
+    sent = datetime(2026, 8, 30, 9, 30, tzinfo=timezone.utc)
+    payload = _payload(group["jid"], "resume-1")
+    payload["messages"][0]["sent_at"] = sent.isoformat()
+    body = json.dumps(payload).encode()
+    assert (
+        client.post(
+            "/internal/whatsapp/ingest", content=body, headers=_sign(body)
+        ).status_code
+        == 200
+    )
+
+    resp = client.get("/internal/whatsapp/groups", headers=_sign(b""))
+    rows = {g["group_jid"]: g for g in resp.json()["groups"]}
+    assert datetime.fromisoformat(rows[group["jid"]]["last_message_at"]) == sent
+
+
+def test_the_resume_point_does_not_move_backwards(client, ingest_secret, group):
+    """Messages arrive out of order on a backfill; the watermark is a high mark.
+
+    If an older message could drag it back, every backfill would re-open a gap
+    the next reconnect would then re-forward -- a loop that bills extraction
+    twice for the same day.
+    """
+    newest = datetime(2026, 8, 30, 18, 0, tzinfo=timezone.utc)
+    older = datetime(2026, 8, 30, 7, 0, tzinfo=timezone.utc)
+
+    for wa_id, stamp in (("order-new", newest), ("order-old", older)):
+        payload = _payload(group["jid"], wa_id)
+        payload["messages"][0]["sent_at"] = stamp.isoformat()
+        body = json.dumps(payload).encode()
+        assert (
+            client.post(
+                "/internal/whatsapp/ingest", content=body, headers=_sign(body)
+            ).status_code
+            == 200
+        )
+
+    resp = client.get("/internal/whatsapp/groups", headers=_sign(b""))
+    rows = {g["group_jid"]: g for g in resp.json()["groups"]}
+    assert datetime.fromisoformat(rows[group["jid"]]["last_message_at"]) == newest
+
+
+def test_the_watch_list_stays_authenticated(client, ingest_secret, group):
+    """It now reveals ingestion timing, not just names. Same HMAC gate."""
+    assert client.get("/internal/whatsapp/groups").status_code == 403
+
+
 def test_ingest_requires_a_signature(client, ingest_secret, group):
     body = json.dumps(_payload(group["jid"], "unsigned-1")).encode()
     resp = client.post("/internal/whatsapp/ingest", content=body)

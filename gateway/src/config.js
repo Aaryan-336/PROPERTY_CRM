@@ -68,10 +68,24 @@ export const config = {
   retryBaseMs: Number(process.env.RETRY_BASE_MS || 2000),
   retryMaxMs: Number(process.env.RETRY_MAX_MS || 120000),
 
-  // Ignore anything older than this on first connect. Without it, pairing a
-  // fresh session replays weeks of scrollback and bills a full re-extraction
-  // of listings that are long gone.
+  // Ignore anything older than this in a group the CRM has never stored a
+  // message for. Without it, pairing a fresh session replays weeks of
+  // scrollback and bills a full re-extraction of listings that are long gone.
+  //
+  // This is the *fallback*, not the rule. A group the CRM has already ingested
+  // resumes from its own watermark instead -- see `resumePoint`.
   maxMessageAgeMs: Number(process.env.MAX_MESSAGE_AGE_MS || 24 * 60 * 60 * 1000),
+
+  // How far back a watermark is allowed to reach.
+  //
+  // The watermark answers "what was the last thing you stored", and after a
+  // long enough silence that is the wrong question: a group dormant since March
+  // would resume from March and re-ingest a quarter of dead listings the first
+  // time it is switched back on. Seven days covers a sleeping laptop, a long
+  // weekend and a Render outage, and stops short of an archaeology bill.
+  backfillMaxAgeMs: Number(
+    process.env.BACKFILL_MAX_AGE_MS || 7 * 24 * 60 * 60 * 1000,
+  ),
 
   logLevel: process.env.LOG_LEVEL || "info",
 };

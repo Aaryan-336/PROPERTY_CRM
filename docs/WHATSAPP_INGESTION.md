@@ -142,6 +142,46 @@ cd backend && ./.venv/bin/python -m app.workers.whatsapp
 ./.venv/bin/python -m app.workers.whatsapp --dry-run
 ```
 
+### Coming back after a disconnect
+
+The gateway is the disposable half of this pair. It runs on a laptop that
+sleeps, or a host whose filesystem is restored from the repo on every deploy.
+So it must be able to go away and come back without the firm losing the
+messages posted in between — and it cannot be the thing that remembers where it
+got to.
+
+The database remembers instead. `WhatsAppGroup.last_message_at` is already the
+newest message stored for a group, so `/internal/whatsapp/groups` hands it back
+with the watch list, and the gateway resumes from there:
+
+| Situation | Resume point | Why |
+|---|---|---|
+| Group has a watermark | The watermark | Everything after it was posted while the gateway was away. That is the gap, and it is exactly what the owner expects to find waiting. |
+| Group has none | `MAX_MESSAGE_AGE_MS` (24h) | A fresh pairing, or a group just switched on. There is no gap, only history — and history is somebody else's dead inventory. |
+| Watermark older than `BACKFILL_MAX_AGE_MS` (7d) | The cap | A group quiet since spring is an archive, not a gap. Without the cap, switching it back on replays a quarter and bills a full re-extraction. |
+
+Two things make this safe to run at all:
+
+**Duplicates are free.** Ingest is idempotent on `wa_message_id`, so an overlap
+between what the gateway replays and what the CRM already holds costs one
+rejected row. That is what lets the resume point be approximate — it can err
+towards sending too much, because only the direction that sends too little
+loses anything.
+
+**It filters history rather than asking for more.** `syncFullHistory` stays
+off. The gateway still never requests more scrollback than an ordinary desktop
+client gets on linking — pulling months across hundreds of groups is the single
+most abnormal-looking thing a new device can do, and this account belongs to a
+working brokerage. What changed is that the slice WhatsApp sends unprompted is
+now kept for watched groups instead of discarded wholesale. The watch list is
+applied before decoding, so a group the owner never picked is not read even in
+passing.
+
+`GET /healthz` on the gateway reports `backfilled` — how much of this process's
+traffic was recovered rather than heard live. A reconnect that closed a real
+gap says so in a number, rather than leaving it to be inferred from whether the
+inventory looks right.
+
 ### Pairing from the browser
 
 The owner holds the phone; the gateway holds the terminal. So the QR travels

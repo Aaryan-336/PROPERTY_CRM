@@ -94,6 +94,21 @@
     padding-bottom: max(1rem, env(safe-area-inset-bottom));
   }
 
+  /* Clears the iOS status bar.
+   *
+   * The app declares `viewport-fit: cover`, so in an installed PWA the web view
+   * starts at the physical top of the screen -- underneath the clock, the
+   * battery and the notification shade's pull-down target. Without this the
+   * first row of anything we paint shares those pixels with iOS's own chrome.
+   *
+   * `max()` rather than the raw inset because the inset is 0 in a browser tab
+   * and on Android, where we still want the same breathing room we would have
+   * written by hand.
+   */
+  .safe-top {
+    padding-top: max(1rem, env(safe-area-inset-top));
+  }
+
   /* Clears the floating mobile dock.
    *
    * The dock is a 44px tap target in a pill with 0.5rem of vertical padding,

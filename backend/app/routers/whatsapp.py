@@ -248,6 +248,18 @@ async def gateway_groups(
 
     The owner toggling a group in the UI is the single source of truth; the
     gateway polls this and adjusts.
+
+    Each row carries ``last_message_at`` -- the newest message this group has
+    actually stored. That is the gateway's resume point after a disconnect: it
+    can forward everything posted since, instead of guessing with a fixed age
+    window that either replays dead scrollback or silently drops a weekend.
+
+    The watermark lives here rather than on the gateway's disk deliberately.
+    The gateway is the disposable half of this pair -- it runs on a laptop that
+    sleeps and a host whose filesystem is restored from the repo on every
+    deploy -- so the one process that *cannot* forget is the one that should be
+    remembering. It is also the honest answer: what the CRM has stored is the
+    only thing that makes a message safe to skip.
     """
     verify_gateway_signature(
         await request.body(), x_balaji_signature, x_balaji_timestamp
@@ -255,13 +267,32 @@ async def gateway_groups(
     with system_scope():
         rows = (
             db.execute(
-                select(WhatsAppGroup.group_jid, WhatsAppGroup.name)
+                select(
+                    WhatsAppGroup.group_jid,
+                    WhatsAppGroup.name,
+                    WhatsAppGroup.last_message_at,
+                )
                 .where(WhatsAppGroup.deleted_at.is_(None))
                 .where(WhatsAppGroup.is_active.is_(True))
             )
             .all()
         )
-    return {"groups": [{"group_jid": jid, "name": name} for jid, name in rows]}
+    return {
+        "groups": [
+            {
+                "group_jid": jid,
+                "name": name,
+                # Null for a group that has been switched on but has never
+                # delivered anything. The gateway reads that as "no resume
+                # point" and falls back to its own age window, so adding a
+                # group does not drag its whole history in.
+                "last_message_at": (
+                    last_message_at.isoformat() if last_message_at else None
+                ),
+            }
+            for jid, name, last_message_at in rows
+        ]
+    }
 
 
 # ---------------------------------------------------------------------------

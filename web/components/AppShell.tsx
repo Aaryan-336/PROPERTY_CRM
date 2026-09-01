@@ -109,7 +109,7 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
       {/* Laptop: the mobile pill reoriented into a fixed rail — same Ink
           surface and visual language, freeing full viewport height for the
           data-dense views the owner opens at day's end. */}
-      <aside className="sticky top-0 hidden h-dvh w-[232px] shrink-0 flex-col bg-ink px-3 py-5 lg:flex">
+      <aside className="safe-top sticky top-0 hidden h-dvh w-[232px] shrink-0 flex-col bg-ink px-3 pb-5 lg:flex">
         <div className="px-3 pb-6">
           <p className="font-display text-lg leading-none text-white">Balaji</p>
           <p className="tabular mt-1 text-[10px] uppercase tracking-[0.18em] text-ink-muted">
@@ -157,8 +157,13 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Mobile header. Kept short so the content starts high on the screen. */}
-        <header className="flex items-center justify-between px-4 pt-4 lg:hidden">
+        {/* Mobile header.
+            Sticky and opaque, not because a phone needs a persistent title bar
+            but because `viewport-fit: cover` means everything we paint scrolls
+            underneath the iOS clock and battery. An opaque bar pinned to the
+            top is the thing that stops list rows appearing *through* the status
+            bar; `safe-top` is what stops this bar doing it itself. */}
+        <header className="safe-top sticky top-0 z-30 flex items-center justify-between bg-parchment px-4 pb-3 lg:hidden">
           <div>
             <p className="font-display text-base leading-none text-ink">Balaji</p>
             <p className="text-[11px] text-slate">
