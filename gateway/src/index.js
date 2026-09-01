@@ -301,19 +301,21 @@ async function connect() {
     // the phone and in whatever WhatsApp records server-side; there is no
     // reason to be the one device on the account that looks automated.
     browser: Browsers.macOS("Desktop"),
-    // Which of the history the phone pushes is worth decoding.
+    // Decode the history the phone pushes, rather than discarding it unread.
     //
-    // Note what this does *not* do: `syncFullHistory` stays false, so the
-    // gateway still never asks WhatsApp for more than an ordinary desktop
-    // client gets on linking. Requesting months of scrollback across hundreds
-    // of groups is the single most abnormal-looking thing a new device can do,
-    // and that request is still not made. This only stops us throwing away the
-    // slice we are already sent -- and only for the groups the owner picked.
-    // Everything that survives here still has to clear the resume point.
-    shouldSyncHistoryMessage: (message) => {
-      const jid = message?.key?.remoteJid;
-      return Boolean(jid && watched.has(jid));
-    },
+    // The argument is a HistorySyncNotification -- a pointer to an encrypted
+    // blob of many chats -- NOT a message. It has no `remoteJid`, so this hook
+    // *cannot* filter by group, and an earlier version that tried returned
+    // false for everything and silently blocked all history. Group filtering
+    // belongs downstream in `handleMessage`, which sees real messages and drops
+    // anything outside the watch list before it reaches the outbox.
+    //
+    // Note what this still does not do: `syncFullHistory` stays false, so the
+    // gateway never asks WhatsApp for more than an ordinary desktop client gets
+    // on linking. Requesting months of scrollback across hundreds of groups is
+    // the single most abnormal-looking thing a new device can do, and that
+    // request is not made. This only accepts what arrives unbidden.
+    shouldSyncHistoryMessage: () => true,
   });
 
   socket = sock;
