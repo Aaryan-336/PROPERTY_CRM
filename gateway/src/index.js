@@ -55,6 +55,7 @@ import pino from "pino";
 import qrcode from "qrcode-terminal";
 
 import { resumePoint, watchEntry } from "./backfill.js";
+import { shouldIgnorePairRequest } from "./pairing.js";
 import { isSocketNoise } from "./resilience.js";
 import { config } from "./config.js";
 import {
@@ -109,6 +110,10 @@ let connected = false;
 // so "down for two minutes" means two minutes of actually being down rather
 // than two minutes since the process started.
 let lastConnectionChange = Date.now();
+// Fixed for the life of the process. Used to date a pairing request against
+// this run, so one queued while the gateway was down is never mistaken for a
+// deliberate relink -- see `shouldIgnorePairRequest`.
+const startedAt = Date.now();
 // When the current socket came up, in epoch milliseconds. Used to date a
 // pairing request against the connection, so a request made while this process
 // was down is not allowed to tear down the session it then established.
@@ -557,6 +562,15 @@ async function startFreshPairing() {
 }
 
 /** Anything the owner has queued from the CRM since the last poll. */
+/** Do we hold a linked device on disk? The thing a stray re-pair destroys. */
+function hasStoredSession() {
+  try {
+    return fs.statSync(path.join(config.authDir, "creds.json")).size > 0;
+  } catch {
+    return false;
+  }
+}
+
 async function pollCommands() {
   if (shuttingDown) return;
   const { pair, syncGroups, pairRequestedAt } = await fetchCommands();
@@ -576,12 +590,19 @@ async function pollCommands() {
     // had already fixed itself -- and an unnecessary re-link is the most
     // account-flagging thing this process does.
     //
-    // So a request that predates this connection is treated as answered by the
-    // connection itself. A deliberate relink is pressed at a screen showing the
-    // account it is replacing, which can only happen after connecting.
-    if (connectedAt && pairRequestedAt && pairRequestedAt < connectedAt) {
+    // So a request that predates this run is treated as answered by the run
+    // itself. A deliberate relink is pressed at a screen showing the account it
+    // is replacing, which can only happen after connecting.
+    if (
+      shouldIgnorePairRequest({
+        pairRequestedAt,
+        connectedAt,
+        startedAt,
+        hasStoredSession: hasStoredSession(),
+      })
+    ) {
       log.info(
-        "ignoring a pair request from before this session connected — " +
+        "ignoring a pair request from before this gateway was alive — " +
           "it asked for a connection, and there is one",
       );
       return;
