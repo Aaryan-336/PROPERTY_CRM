@@ -1,0 +1,1396 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Balaji CRM — Reference &amp; Redesign Brief</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"><style>
+  /* ------------------------------------------------------------------
+     Tokens lifted from the product's own docs/DESIGN_RULES.md, so a
+     document about this app is rendered in the app's language: a warm
+     Parchment ground, Ink reserved for what the owner must trust, and
+     Sandstone as the one accent that carries weight.
+  ------------------------------------------------------------------ */
+  :root {
+    --ink: #15141b;
+    --ink-soft: #211f2a;
+    --ink-line: #322f3d;
+    --ink-dim: #b9b4c6;
+
+    --ground: #f6f2ea;
+    --ground-deep: #ece6da;
+    --surface: #ffffff;
+    --surface-2: #fbf8f2;
+
+    --sandstone: #c9863e;
+    --sandstone-deep: #925f26;
+    --sandstone-wash: #f4e6d2;
+
+    --teal: #1e5c56;
+    --teal-wash: #d7e6e3;
+
+    --signal: #c33d26;
+    --signal-wash: #f8ddd6;
+
+    --text: #15141b;
+    --text-dim: #55505f;
+    --text-faint: #7c7688;
+    --rule: #e2dbcd;
+    --rule-strong: #d2c8b4;
+
+    --display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+    --body: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+    --measure: 68ch;
+  }
+
+
+  
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--text);
+    font-family: var(--body);
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 0 24px 96px;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--display);
+    font-weight: 700;
+    letter-spacing: -0.022em;
+    text-wrap: balance;
+    margin: 0;
+  }
+
+  p { margin: 0; max-width: var(--measure); }
+  ul, ol { margin: 0; padding-left: 1.15em; max-width: var(--measure); }
+  li { margin: 0.3em 0; }
+  li::marker { color: var(--sandstone); }
+
+  code, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  code {
+    font-size: 0.86em;
+    background: var(--ground-deep);
+    border: 1px solid var(--rule);
+    border-radius: 5px;
+    padding: 0.1em 0.38em;
+    color: var(--text-dim);
+  }
+
+  a { color: var(--sandstone-deep); }
+
+  :focus-visible {
+    outline: 2px solid var(--sandstone);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+
+  /* ---------------------------------------------------------- masthead */
+
+  .masthead {
+    border-bottom: 1px solid var(--rule);
+    padding: 72px 0 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: var(--sandstone-deep);
+  }
+
+  .masthead h1 {
+    font-size: clamp(38px, 6.2vw, 62px);
+    line-height: 1.02;
+  }
+
+  .standfirst {
+    font-size: 19px;
+    line-height: 1.6;
+    color: var(--text-dim);
+    max-width: 60ch;
+  }
+
+  .facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 28px;
+    padding-top: 6px;
+  }
+
+  .fact { display: flex; flex-direction: column; gap: 2px; }
+
+  .fact dt {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--text-faint);
+  }
+
+  .fact dd {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  /* ----------------------------------------------------------- section */
+
+  section { padding-top: 64px; }
+
+  .sec-head {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 12px;
+    margin-bottom: 28px;
+  }
+
+  .sec-num {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--sandstone);
+    letter-spacing: 0.08em;
+    flex-shrink: 0;
+  }
+
+  .sec-head h2 { font-size: clamp(23px, 3vw, 30px); line-height: 1.15; }
+
+  .stack { display: flex; flex-direction: column; gap: 18px; }
+  .stack-lg { display: flex; flex-direction: column; gap: 34px; }
+
+  h3 {
+    font-size: 18px;
+    letter-spacing: -0.012em;
+    margin-bottom: 2px;
+  }
+
+  h4 {
+    font-family: var(--body);
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-faint);
+  }
+
+  /* ------------------------------------------------------------- cards */
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 18px;
+    padding: 22px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .card-ink {
+    background: var(--ink);
+    border-color: var(--ink-line);
+    color: #f2eee6;
+  }
+  .card-ink h3, .card-ink strong { color: #ffffff; }
+  .card-ink p, .card-ink li { color: var(--ink-dim); }
+  .card-ink h4 { color: #8b869c; }
+  .card-ink code {
+    background: var(--ink-soft);
+    border-color: var(--ink-line);
+    color: var(--ink-dim);
+  }
+
+  .grid-3 {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(268px, 1fr));
+    gap: 16px;
+  }
+
+  .grid-2 {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 16px;
+  }
+
+  /* -------------------------------------------------------------- pill */
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 999px;
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    white-space: nowrap;
+  }
+  .pill::before {
+    content: "";
+    width: 5px; height: 5px;
+    border-radius: 999px;
+    background: currentColor;
+    opacity: 0.75;
+  }
+  .p-sand   { background: var(--sandstone-wash); color: var(--sandstone-deep); }
+  .p-teal   { background: var(--teal-wash);      color: var(--teal); }
+  .p-signal { background: var(--signal-wash);    color: var(--signal); }
+  .p-mute   { background: var(--ground-deep);    color: var(--text-dim); }
+
+  /* ------------------------------------------------------------ tables */
+
+  .scroll { overflow-x: auto; border-radius: 14px; border: 1px solid var(--rule); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    background: var(--surface);
+    min-width: 520px;
+  }
+
+  th {
+    text-align: left;
+    font-family: var(--body);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--text-faint);
+    padding: 11px 16px;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--rule);
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+    color: var(--text-dim);
+  }
+
+  tbody tr:last-child td { border-bottom: 0; }
+  td strong { color: var(--text); font-weight: 600; }
+  td.mono, th.mono { font-family: var(--mono); font-size: 12.5px; }
+  .yes { color: var(--teal); font-weight: 700; }
+  .no  { color: var(--text-faint); }
+
+  /* --------------------------------------------------------- timeline
+
+     The product's signature element is a vertical checkpoint timeline —
+     used for a lead's pipeline, a property's showing history, a call's
+     escalation chain. Reusing it here for the user flows is the point:
+     the flows ARE journeys, and the reader meets the same shape they
+     will meet in the app.
+  ---------------------------------------------------------------- */
+
+  .flow { display: flex; flex-direction: column; gap: 0; }
+
+  .step {
+    display: grid;
+    grid-template-columns: 30px 1fr;
+    gap: 16px;
+    position: relative;
+    padding-bottom: 22px;
+  }
+  .step:last-child { padding-bottom: 0; }
+
+  .step::before {
+    content: "";
+    position: absolute;
+    left: 14px;
+    top: 26px;
+    bottom: -4px;
+    width: 2px;
+    background: linear-gradient(to bottom, var(--rule-strong) 0%, var(--rule-strong) 88%, transparent 100%);
+  }
+  .step:last-child::before { display: none; }
+
+  .node {
+    width: 30px; height: 30px;
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 500;
+    background: var(--surface);
+    border: 2px solid var(--rule-strong);
+    color: var(--text-faint);
+    position: relative;
+    z-index: 1;
+  }
+  /* Both node fills take their text from the token set that inverts with the
+     theme, so the numeral stays legible on either ground. A literal white
+     would sit at 3:1 on light-mode sandstone and vanish on the dark-mode
+     tint, which is exactly the bug the token system exists to prevent. */
+  .node-on {
+    background: var(--sandstone-deep);
+    border-color: var(--sandstone-deep);
+    color: var(--surface);
+  }
+  .node-end {
+    background: var(--teal);
+    border-color: var(--teal);
+    color: var(--ground);
+  }
+
+  .step-body { display: flex; flex-direction: column; gap: 5px; padding-top: 2px; }
+  .step-body strong { font-size: 15.5px; font-weight: 700; color: var(--text); }
+  .step-body p { font-size: 14.5px; color: var(--text-dim); }
+  .step-where {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--sandstone-deep);
+  }
+
+  /* ------------------------------------------------------------ states */
+
+  .states { display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch; }
+
+  .state {
+    flex: 1 1 150px;
+    border: 1px solid var(--rule);
+    border-radius: 12px;
+    padding: 12px 14px;
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .state .mono { font-size: 12.5px; font-weight: 500; color: var(--text); }
+  .state span:last-child { font-size: 12.5px; color: var(--text-dim); line-height: 1.45; }
+  .state-term { border-left: 3px solid var(--teal); }
+  .state-bad  { border-left: 3px solid var(--signal); }
+  .state-mid  { border-left: 3px solid var(--sandstone); }
+
+  /* -------------------------------------------------------------- note */
+
+  .note {
+    border-left: 3px solid var(--sandstone);
+    padding: 2px 0 2px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .note p { font-size: 15px; color: var(--text-dim); }
+
+  .lede { font-size: 17px; color: var(--text-dim); max-width: 62ch; }
+
+  .kv { display: flex; flex-direction: column; gap: 9px; }
+  .kv-row {
+    display: grid;
+    grid-template-columns: 148px 1fr;
+    gap: 14px;
+    font-size: 14px;
+    align-items: baseline;
+  }
+  .kv-row > span:first-child {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-faint);
+  }
+  .kv-row > span:last-child { color: var(--text-dim); }
+
+  footer {
+    margin-top: 76px;
+    padding-top: 22px;
+    border-top: 1px solid var(--rule);
+    font-size: 13px;
+    color: var(--text-faint);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 26px;
+  }
+
+  @media (max-width: 620px) {
+    .wrap { padding: 0 18px 72px; }
+    .masthead { padding-top: 48px; }
+    .kv-row { grid-template-columns: 1fr; gap: 2px; }
+    .sec-head { flex-direction: column; gap: 4px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+
+  /* ---------------------------------------------------------------- print
+
+     Chrome drops backgrounds by default, which would strip the Ink cards and
+     every status pill -- the two devices carrying the most meaning. */
+  @page { size: A4; margin: 16mm 14mm 18mm; }
+
+  /* The ground goes on `html`, not `body`: Chrome propagates the root
+     background to the whole page canvas including the @page margins, so the
+     parchment reaches the paper edge instead of sitting in a white frame. */
+  html {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    background: var(--ground);
+  }
+
+  body { font-size: 10.5pt; line-height: 1.55; background: var(--ground); }
+  .wrap { max-width: none; padding: 0; }
+
+  /* Nothing that is read as one unit may be split across a page boundary. */
+  .card, .step, .state, .note, .fact, tr, .sec-head { break-inside: avoid; }
+  h1, h2, h3, h4 { break-after: avoid; }
+  .flow, .scroll { break-inside: auto; }
+  section { break-before: page; padding-top: 0; }
+  .cover { break-after: page; }
+
+  .scroll { overflow: visible; }
+  table { min-width: 0; font-size: 9.5pt; }
+  th, td { padding: 7px 11px; }
+
+  .masthead { display: none; }
+  section { padding-top: 0; }
+  .sec-head { margin-bottom: 20px; padding-top: 4px; }
+  footer { break-before: avoid; }
+
+  /* ---------------------------------------------------------------- cover */
+  .cover {
+    min-height: 250mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 6mm 0 0;
+  }
+  .cover-top { display: flex; flex-direction: column; gap: 20px; }
+  .cover h1 { font-size: 54pt; line-height: 0.98; letter-spacing: -0.03em; }
+  .cover .standfirst { font-size: 13pt; max-width: 46ch; }
+  .cover-rule { height: 4px; background: var(--sandstone); width: 84px; }
+  .cover-meta {
+    border-top: 1px solid var(--rule);
+    padding-top: 14px;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px 30px;
+  }
+
+  .toc { display: flex; flex-direction: column; gap: 7px; }
+  .toc-row {
+    display: grid;
+    grid-template-columns: 26px 1fr;
+    gap: 12px;
+    font-size: 11pt;
+    align-items: baseline;
+  }
+  .toc-row span:first-child { font-family: var(--mono); font-size: 9pt; color: var(--sandstone-deep); }
+  .toc-row span:last-child { font-weight: 600; }
+
+  /* Appendix: the prompt is a thing to be copied, so it is set as a block of
+     material rather than as prose. */
+  .prompt-block {
+    background: var(--surface-2);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--sandstone);
+    border-radius: 12px;
+    padding: 16px 20px;
+    font-size: 10pt;
+  }
+  .rule-list { display: flex; flex-direction: column; gap: 10px; counter-reset: r; }
+  .rule-item {
+    display: grid;
+    grid-template-columns: 22px 1fr;
+    gap: 12px;
+    break-inside: avoid;
+  }
+  .rule-item > span:first-child {
+    font-family: var(--mono);
+    font-size: 9pt;
+    color: var(--sandstone-deep);
+    padding-top: 2px;
+  }
+  .rule-item p { font-size: 10.5pt; }
+  .dont { border-left: 3px solid var(--signal); padding-left: 16px; }
+  .dont li::marker { color: var(--signal); }
+</style></head><body><div class="wrap">
+<div class="cover">
+  <div class="cover-top">
+    <div class="cover-rule"></div>
+    <span class="eyebrow">Product &amp; architecture reference · September 2026</span>
+    <h1>Balaji CRM</h1>
+    <p class="standfirst">An internal CRM for a small Mumbai real-estate brokerage:
+      what it is, who uses it, every screen each role reaches, and the flows that
+      carry the work. With a master prompt for the redesign.</p>
+  </div>
+
+  <div class="toc">
+    <h4>Contents</h4>
+    <div class="toc-row"><span>01</span><span>What the application actually is</span></div>
+    <div class="toc-row"><span>02</span><span>Who uses it, and what each of them sees</span></div>
+    <div class="toc-row"><span>03</span><span>Information architecture</span></div>
+    <div class="toc-row"><span>04</span><span>User flows, step by step</span></div>
+    <div class="toc-row"><span>05</span><span>The inventory pipeline</span></div>
+    <div class="toc-row"><span>06</span><span>The data model</span></div>
+    <div class="toc-row"><span>07</span><span>The rules the interface obeys</span></div>
+    <div class="toc-row"><span>A</span><span>Master prompt for the redesign</span></div>
+  </div>
+
+  <div class="cover-meta">
+    <div class="fact"><dt>Primary surface</dt><dd>Mobile PWA, 375px first</dd></div>
+    <div class="fact"><dt>Live roles</dt><dd>Owner · Agent · Cold Caller</dd></div>
+    <div class="fact"><dt>Inventory source</dt><dd>WhatsApp groups, read automatically</dd></div>
+    <div class="fact"><dt>Stack</dt><dd>Next.js · FastAPI · Postgres</dd></div>
+  </div>
+</div>
+
+
+  <header class="masthead">
+    <span class="eyebrow">Product &amp; architecture reference</span>
+    <h1>Balaji CRM</h1>
+    <p class="standfirst">
+      An internal CRM for a small Mumbai real-estate brokerage. It does three
+      things a WhatsApp-and-notebook operation cannot: it turns hundreds of
+      broker groups into one searchable inventory, it shows the owner what every
+      member of staff is doing with every client, and it stops the client list
+      walking out of the door.
+    </p>
+    <dl class="facts">
+      <div class="fact"><dt>Primary surface</dt><dd>Mobile PWA</dd></div>
+      <div class="fact"><dt>Live roles</dt><dd>Owner · Agent · Cold Caller</dd></div>
+      <div class="fact"><dt>Inventory source</dt><dd>WhatsApp groups</dd></div>
+      <div class="fact"><dt>Stack</dt><dd>Next.js · FastAPI · Postgres</dd></div>
+    </dl>
+  </header>
+
+  <!-- ============================================================ 01 -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">01</span>
+      <h2>What the application actually is</h2>
+    </div>
+
+    <div class="stack-lg">
+      <p class="lede">
+        Start with the business, because the software only makes sense as an
+        answer to it. A brokerage owner runs a team of closing agents and
+        cold callers. The work happens on phones. Inventory arrives as
+        free-text messages in broker WhatsApp groups; leads arrive as
+        spreadsheets and phone calls; everything else lives in someone's head.
+      </p>
+
+      <div class="grid-3">
+        <div class="card">
+          <span class="pill p-sand">Problem one</span>
+          <h3>Inventory is scattered</h3>
+          <p>Listings sit in hundreds of groups as unstructured text. No agent
+            can answer &ldquo;what have we got, 2BHK, Malad, under 1.5&nbsp;Cr&rdquo;
+            without scrolling for an hour.</p>
+        </div>
+        <div class="card">
+          <span class="pill p-sand">Problem two</span>
+          <h3>The owner is blind</h3>
+          <p>Nobody can say which agent showed which flat to which client, or
+            whether a lead was ever called back. Accountability is anecdotal.</p>
+        </div>
+        <div class="card">
+          <span class="pill p-sand">Problem three</span>
+          <h3>The list can walk</h3>
+          <p>With no access control and no audit trail, any member of staff can
+            copy the firm's entire client book on their way to a competitor.</p>
+        </div>
+      </div>
+
+      <div class="card card-ink">
+        <h4>The shape of the answer</h4>
+        <h3>Three different applications behind one login</h3>
+        <p>
+          This is the single most important thing to understand about the
+          product. A cold caller and the owner do not see the same app with
+          some buttons greyed out — they see genuinely different surfaces, with
+          different navigation, built on data the server will not hand over to
+          the other role. The role is not a UI preference. It is enforced twice,
+          independently, in the API.
+        </p>
+      </div>
+
+      <div class="note">
+        <p>
+          <strong>What it is not.</strong> Not a buyer-facing portal, not a
+          native app, and not a commission or document system. It is an internal
+          tool for one firm, designed to be operated one-handed, on a phone, in
+          the sun, in under fifteen seconds per action.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ 02 -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">02</span>
+      <h2>Who uses it, and what each of them sees</h2>
+    </div>
+
+    <div class="stack-lg">
+      <div class="grid-3">
+        <div class="card">
+          <span class="pill p-teal">Owner</span>
+          <h3>Sees everything</h3>
+          <p>The firm's head. Every lead, every agent, every property, the audit
+            log, and the WhatsApp configuration. The only role that can delete,
+            export, import, reassign, or read the raw message feed.</p>
+        </div>
+        <div class="card">
+          <span class="pill p-sand">Agent</span>
+          <h3>Sees their own book</h3>
+          <p>Closing and field staff. Their assigned leads, the firm's shared
+            inventory, and their showings. Cannot export, cannot reassign a lead
+            to themselves, cannot delete a listing.</p>
+        </div>
+        <div class="card">
+          <span class="pill p-signal">Cold Caller</span>
+          <h3>Sees one name at a time</h3>
+          <p>The calling team. A queue of assigned leads — name and number —
+            and nothing else. No lead book, no inventory. Deliberately.</p>
+        </div>
+      </div>
+
+      <div class="stack">
+        <h3>Why the cold caller sees so little</h3>
+        <p>
+          A caller who can page through the whole lead book or the firm's
+          inventory can copy either, and neither is needed to make a call. Under
+          a threat model whose adversary is a person who already has a
+          legitimate account, that access is pure downside. So
+          <code>contacts.browse</code> and <code>properties.read</code> are
+          withheld from the role entirely — the list endpoints refuse it. Hiding
+          the navigation is a consequence, not the enforcement.
+        </p>
+      </div>
+
+      <h3>Capability matrix</h3>
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Capability</th><th>Owner</th><th>Agent</th><th>Cold Caller</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">contacts.browse</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td></tr>
+            <tr><td class="mono">properties.read</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td></tr>
+            <tr><td class="mono">contacts.create / edit</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+            <tr><td class="mono">calls.log</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+            <tr><td class="mono">properties.write</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td></tr>
+            <tr><td class="mono">properties.delete</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td></tr>
+            <tr><td class="mono">contacts.delete</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td></tr>
+            <tr><td class="mono">contacts.export</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td></tr>
+            <tr><td class="mono">contacts.reassign</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td></tr>
+            <tr><td class="mono">escalations.receive</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td></tr>
+            <tr><td class="mono">audit.read</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td></tr>
+            <tr><td class="mono">whatsapp.manage</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note">
+        <p>
+          <strong>Two independent layers.</strong> The table above is
+          <em>capability</em> checking: may this role call this endpoint at all.
+          Separately, every read is <em>row-scoped</em>: an agent's query for
+          contacts is rewritten to their assignments before it reaches the
+          database. Either layer alone would prevent a leak; the database
+          connection refuses to execute an unscoped query against a guarded
+          table, so forgetting the scope is a crash rather than a disclosure.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ 03 -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">03</span>
+      <h2>Information architecture</h2>
+    </div>
+
+    <div class="stack-lg">
+      <p class="lede">
+        Every screen sits at one flat top level — there is no nested menu
+        anywhere in the product. What differs by role is which of these
+        destinations exist at all, and which four earn a place on the phone's
+        thumb bar.
+      </p>
+
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr><th>Route</th><th>Screen</th><th>Who reaches it</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">/</td><td><strong>Home</strong> — a different dashboard per role</td><td>All</td></tr>
+            <tr><td class="mono">/queue</td><td><strong>Call queue</strong> — the next lead to ring</td><td>Cold Caller</td></tr>
+            <tr><td class="mono">/queue/session</td><td><strong>Call console</strong> — one lead, full screen</td><td>Cold Caller</td></tr>
+            <tr><td class="mono">/my-calls</td><td><strong>My calls</strong> — what I logged today</td><td>Cold Caller</td></tr>
+            <tr><td class="mono">/contacts</td><td><strong>Leads</strong> — the lead book, filterable</td><td>Owner, Agent</td></tr>
+            <tr><td class="mono">/contacts/[id]</td><td><strong>Lead detail</strong> — journey, calls, interests</td><td>Owner, Agent</td></tr>
+            <tr><td class="mono">/contacts/new</td><td><strong>Add lead</strong></td><td>Owner, Agent</td></tr>
+            <tr><td class="mono">/properties</td><td><strong>Inventory</strong> — cards on phone, table on laptop</td><td>Owner, Agent</td></tr>
+            <tr><td class="mono">/properties/[id]</td><td><strong>Listing detail</strong> — provenance, showings</td><td>Owner, Agent</td></tr>
+            <tr><td class="mono">/properties/new</td><td><strong>Add listing</strong> — manual entry</td><td>Owner, Agent</td></tr>
+            <tr><td class="mono">/showings</td><td><strong>Showings</strong> — site visits, scheduled and done</td><td>Owner, Agent</td></tr>
+            <tr><td class="mono">/escalations</td><td><strong>Escalations</strong> — leads flagged for the owner</td><td>Owner</td></tr>
+            <tr><td class="mono">/feed</td><td><strong>Activity</strong> — firm-wide, live</td><td>Owner</td></tr>
+            <tr><td class="mono">/inventory-feed</td><td><strong>Inventory feed</strong> — WhatsApp pipeline console</td><td>Owner</td></tr>
+            <tr><td class="mono">/import</td><td><strong>Import leads</strong> — spreadsheet upload</td><td>Owner</td></tr>
+            <tr><td class="mono">/team</td><td><strong>Team</strong> — staff and access</td><td>Owner</td></tr>
+            <tr><td class="mono">/team/performance</td><td><strong>Performance</strong> — calls, showings, escalations</td><td>Owner</td></tr>
+            <tr><td class="mono">/audit</td><td><strong>Audit</strong> — who did what, when</td><td>Owner</td></tr>
+            <tr><td class="mono">/account</td><td><strong>Your account</strong> — password</td><td>All</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>What reaches the thumb bar</h3>
+      <p>
+        A floating pill holds five targets. Everything a role may open stays
+        reachable; the bar only decides what is one tap away rather than one tap
+        behind <strong>More</strong>. The split is by what is needed
+        <em>away from a desk</em> — escalations and the lead book are urgent in a
+        car, the activity feed and the audit log are end-of-day reading.
+      </p>
+
+      <div class="grid-3">
+        <div class="card">
+          <h4>Owner</h4>
+          <div class="kv">
+            <div class="kv-row"><span>On the bar</span><span>Home · Leads · Inventory · Escalations</span></div>
+            <div class="kv-row"><span>Behind More</span><span>Showings, Activity, Inventory feed, Import, Team, Audit, Account</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <h4>Agent</h4>
+          <div class="kv">
+            <div class="kv-row"><span>On the bar</span><span>Home · Leads · Inventory · Showings</span></div>
+            <div class="kv-row"><span>Behind More</span><span>Account</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <h4>Cold Caller</h4>
+          <div class="kv">
+            <div class="kv-row"><span>On the bar</span><span>Home · Queue · My calls</span></div>
+            <div class="kv-row"><span>Behind More</span><span>Account</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="note">
+        <p>
+          On a laptop the same pill becomes a fixed left rail — icon and label,
+          same Ink surface, same order. Not a different information
+          architecture, just the same one turned ninety degrees so the full
+          viewport height goes to the data.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ 04 -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">04</span>
+      <h2>User flows, step by step</h2>
+    </div>
+
+    <div class="stack-lg">
+      <p class="lede">
+        Four journeys carry almost all of the product's value. They are drawn
+        here as checkpoint timelines because that is the product's own signature
+        element — the same vertical node-and-rail shape the app uses for a
+        lead's pipeline, a listing's showing history, and a call's escalation
+        chain.
+      </p>
+
+      <!-- Flow A -->
+      <div class="stack">
+        <h3>A · The cold caller works the queue</h3>
+        <p>The highest-volume loop in the product. Everything is tuned for the
+          time between two calls.</p>
+        <div class="flow">
+          <div class="step">
+            <div class="node node-on">1</div>
+            <div class="step-body">
+              <strong>Open the queue</strong>
+              <p>The list is their assigned leads only — there is no separate
+                queue table. Leads are grouped by <em>why</em> each surfaced, so
+                the order is legible rather than taken on faith.</p>
+              <span class="step-where">/queue</span>
+            </div>
+          </div>
+          <div class="step">
+            <div class="node node-on">2</div>
+            <div class="step-body">
+              <strong>Start the session</strong>
+              <p>One lead fills the screen: name, number, a tap-to-dial. No
+                budget, no inventory, no other leads visible.</p>
+              <span class="step-where">/queue/session</span>
+            </div>
+          </div>
+          <div class="step">
+            <div class="node node-on">3</div>
+            <div class="step-body">
+              <strong>Log the outcome</strong>
+              <p>Six tap-to-select outcomes — <code>connected</code>,
+                <code>not_reachable</code>, <code>not_interested</code>,
+                <code>interested</code>, <code>callback_requested</code>,
+                <code>wrong_number</code> — plus a temperature of hot, warm or
+                cold, and a free-text remark. Chips rather than dropdowns,
+                because typing is the enemy.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="node node-on">4</div>
+            <div class="step-body">
+              <strong>The system reacts</strong>
+              <p><code>interested</code> or <code>callback_requested</code>
+                creates a follow-up task automatically — the caller never has to
+                remember to. The lead's stage advances, and the call is written
+                to the activity feed the owner is watching.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="node node-end">✓</div>
+            <div class="step-body">
+              <strong>Escalate, or move on</strong>
+              <p>Flagging for the owner pushes a notification to every owner
+                device and places the lead in the escalation inbox. Otherwise
+                the next lead is already loaded.</p>
+              <span class="step-where">/my-calls records what they did today</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Flow B -->
+      <div class="stack">
+        <h3>B · The agent takes a lead to a site visit</h3>
+        <div class="flow">
+          <div class="step">
+            <div class="node node-on">1</div>
+            <div class="step-body">
+              <strong>Open the lead</strong>
+              <p>The journey timeline shows every stage the lead has passed
+                through, every call logged against it, and by whom.</p>
+              <span class="step-where">/contacts/[id]</span>
+            </div>
+          </div>
+          <div class="step">
+            <div class="node node-on">2</div>
+            <div class="step-body">
+              <strong>Match inventory</strong>
+              <p>The lead's budget and location preferences are matched against
+                shared inventory, so the agent is offered flats rather than
+                searching for them.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="node node-on">3</div>
+            <div class="step-body">
+              <strong>Record interest</strong>
+              <p>A property interest links lead to listing and moves through
+                <code>inquired</code> → <code>site_visit_scheduled</code> →
+                <code>site_visit_done</code> → <code>negotiating</code>. This
+                link is what makes the owner's core question answerable.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="node node-on">4</div>
+            <div class="step-body">
+              <strong>Log the showing</strong>
+              <p>Done from the phone, at the flat. Who showed what, to whom,
+                when — the record the owner has never had before.</p>
+              <span class="step-where">/showings</span>
+            </div>
+          </div>
+          <div class="step">
+            <div class="node node-end">✓</div>
+            <div class="step-body">
+              <strong>Advance or close</strong>
+              <p>The lead moves toward <code>negotiating</code> and
+                <code>closed</code>, or to <code>lost</code>. Either way the
+                journey is intact and attributable.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Flow C -->
+      <div class="stack">
+        <h3>C · Inventory arrives by itself</h3>
+        <p>No person is in this loop. It is the product's largest single piece
+          of leverage, and section 05 covers the machinery.</p>
+        <div class="flow">
+          <div class="step">
+            <div class="node node-on">1</div>
+            <div class="step-body">
+              <strong>The owner links WhatsApp</strong>
+              <p>A QR appears in the CRM, produced by the gateway, scanned with
+                the phone. The account's groups then list themselves.</p>
+              <span class="step-where">/inventory-feed</span>
+            </div>
+          </div>
+          <div class="step">
+            <div class="node node-on">2</div>
+            <div class="step-body">
+              <strong>The owner picks groups</strong>
+              <p>Out of hundreds, a handful carry inventory. Only selected
+                groups are read — the switch is in the product, and the ingest
+                endpoint drops anything from a group not on the list.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="node node-on">3</div>
+            <div class="step-body">
+              <strong>Messages are stored verbatim</strong>
+              <p>Raw text first, interpretation second. That ordering is what
+                lets a prompt improvement be replayed over history instead of
+                the history being lost.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="node node-on">4</div>
+            <div class="step-body">
+              <strong>A model reads each message</strong>
+              <p>It decides whether the text is inventory at all, then pulls out
+                location, building, configuration, price and area — for
+                <em>every</em> flat in the message, since one post routinely
+                carries nine.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="node node-end">✓</div>
+            <div class="step-body">
+              <strong>Listings merge, sightings accumulate</strong>
+              <p>A flat reposted by four brokers becomes one inventory row and
+                four recorded sightings. Merging never discards who posted what,
+                where, or when.</p>
+              <span class="step-where">/properties</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Flow D -->
+      <div class="stack">
+        <h3>D · The owner checks the firm</h3>
+        <div class="flow">
+          <div class="step">
+            <div class="node node-on">1</div>
+            <div class="step-body">
+              <strong>Escalations first</strong>
+              <p>Leads a caller flagged. This is the only inbox in the product
+                and it is deliberately the owner's landing point when something
+                is waiting.</p>
+              <span class="step-where">/escalations</span>
+            </div>
+          </div>
+          <div class="step">
+            <div class="node node-on">2</div>
+            <div class="step-body">
+              <strong>Activity feed</strong>
+              <p>Firm-wide and live: calls logged, showings recorded, stages
+                moved, listings added.</p>
+              <span class="step-where">/feed</span>
+            </div>
+          </div>
+          <div class="step">
+            <div class="node node-on">3</div>
+            <div class="step-body">
+              <strong>Performance</strong>
+              <p>Per member of staff: calls made, showings done, escalations
+                raised.</p>
+              <span class="step-where">/team/performance</span>
+            </div>
+          </div>
+          <div class="step">
+            <div class="node node-end">✓</div>
+            <div class="step-body">
+              <strong>Audit when it matters</strong>
+              <p>Every privileged action is recorded — exports, reassignments,
+                deletions, WhatsApp configuration changes. This is the layer
+                that makes the data-leak problem tractable rather than merely
+                discouraged.</p>
+              <span class="step-where">/audit</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ 05 -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">05</span>
+      <h2>The inventory pipeline</h2>
+    </div>
+
+    <div class="stack-lg">
+      <p class="lede">
+        Worth its own section because it is the part of the product that has no
+        equivalent elsewhere, and because its failure modes are invisible by
+        default — a pipeline that silently stops looks exactly like a quiet
+        week in the groups.
+      </p>
+
+      <div class="grid-2">
+        <div class="card">
+          <h4>Stage one</h4>
+          <h3>The gateway</h3>
+          <p>A small Node process holding a linked WhatsApp device. It reads
+            selected groups, journals every message to disk the moment it
+            arrives, and forwards batches to the API over an HMAC-signed
+            webhook. It holds no user credential and can read nothing else in
+            the CRM.</p>
+          <p>Its one job is to lose nothing. On reconnect it asks the CRM where
+            each group left off and forwards everything posted since, so a
+            laptop that slept through a night catches up rather than losing it.</p>
+        </div>
+        <div class="card">
+          <h4>Stage two</h4>
+          <h3>The extractor</h3>
+          <p>Messages are stored before being understood. A worker claims them
+            in batches, sends them to a language model, and applies the result.
+            Obvious chatter is filtered out before any model is called, because
+            paying to classify &ldquo;good morning&rdquo; is a bill rather than
+            a feature.</p>
+          <p>Extraction is probabilistic, so a low-confidence listing is
+            published <em>and marked</em> rather than either silently trusted or
+            silently dropped.</p>
+        </div>
+      </div>
+
+      <h3>A message's state machine</h3>
+      <p>A message only moves forward, and every terminal state is
+        distinguishable — because &ldquo;we read it and it wasn't inventory&rdquo;
+        and &ldquo;we read it and parsing broke&rdquo; need completely different
+        responses from the owner watching the feed.</p>
+
+      <div class="states">
+        <div class="state state-mid">
+          <span class="mono">pending</span>
+          <span>Stored, not yet sent to the model.</span>
+        </div>
+        <div class="state state-mid">
+          <span class="mono">processing</span>
+          <span>Claimed by a worker. Claims that die are reclaimed.</span>
+        </div>
+        <div class="state state-term">
+          <span class="mono">extracted</span>
+          <span>Produced at least one new listing.</span>
+        </div>
+        <div class="state state-term">
+          <span class="mono">duplicate</span>
+          <span>Parsed fine; every listing already existed.</span>
+        </div>
+        <div class="state state-term">
+          <span class="mono">not_listing</span>
+          <span>Group chatter, not inventory.</span>
+        </div>
+        <div class="state state-bad">
+          <span class="mono">failed</span>
+          <span>Errored. Retried up to three times, then left alone.</span>
+        </div>
+      </div>
+
+      <div class="note">
+        <p>
+          <strong>Why the retry cap.</strong> Without one, a single malformed
+          message is re-sent to the model forever. That is a bill, not a bug
+          report. Any message can be re-extracted by hand from the feed —
+          including ones that &ldquo;succeeded&rdquo; and were read wrongly,
+          which never reach the failed state.
+        </p>
+      </div>
+
+      <h3>What the owner watches</h3>
+      <p>
+        The inventory feed console reports facts that are otherwise
+        indistinguishable from each other: whether the gateway is connected,
+        whether extraction credentials exist <em>and</em> whether anything is
+        actually running with them, the queue depth, failures in the last day,
+        listings produced, reposts merged, and claims whose worker died
+        mid-batch. Each of those has the same symptom — a queue that will not
+        drain — and a different remedy.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================ 06 -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">06</span>
+      <h2>The data model, in the terms the product uses</h2>
+    </div>
+
+    <div class="stack-lg">
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr><th>Entity</th><th>What it holds</th><th>Why it exists separately</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Contact</strong></td>
+              <td>A lead: name, phone, budget, location preference, stage, temperature, owner.</td>
+              <td>The unit the whole CRM is scoped around.</td>
+            </tr>
+            <tr>
+              <td><strong>Contact assignment</strong></td>
+              <td>Which staff member holds which lead, and since when.</td>
+              <td>Assignment is history, not a column — reassignment must be visible.</td>
+            </tr>
+            <tr>
+              <td><strong>Property</strong></td>
+              <td>One flat: type, listing type, location, building, config, area, price, status.</td>
+              <td>The deduplicated truth. Four reposts are one row.</td>
+            </tr>
+            <tr>
+              <td><strong>Property source</strong></td>
+              <td>One sighting of a property in one message: who posted, which group, when, the raw text.</td>
+              <td>Makes dedup non-lossy. Merging never discards provenance.</td>
+            </tr>
+            <tr>
+              <td><strong>Property interest</strong></td>
+              <td>A lead's interest in a listing, and how far it has gone.</td>
+              <td>The join that answers &ldquo;who is being shown what&rdquo;.</td>
+            </tr>
+            <tr>
+              <td><strong>Call log</strong></td>
+              <td>Outcome, temperature, remark, whether it was flagged for the owner.</td>
+              <td>The cold caller's entire output, and the escalation trigger.</td>
+            </tr>
+            <tr>
+              <td><strong>Activity</strong></td>
+              <td>Site visits, notes, stage changes, follow-ups.</td>
+              <td>Feeds the journey timeline and the owner's live feed.</td>
+            </tr>
+            <tr>
+              <td><strong>Task</strong></td>
+              <td>A follow-up, usually created automatically from a call outcome.</td>
+              <td>So remembering is the system's job, not the caller's.</td>
+            </tr>
+            <tr>
+              <td><strong>WhatsApp group / message</strong></td>
+              <td>Which groups are read; every raw message and its extraction state.</td>
+              <td>Raw bodies stored before parsing, so history can be replayed.</td>
+            </tr>
+            <tr>
+              <td><strong>Audit log</strong></td>
+              <td>Every privileged action, with actor, resource and detail.</td>
+              <td>The answer to the data-leak problem in the brief.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>The vocabularies</h3>
+      <div class="grid-2">
+        <div class="card">
+          <h4>Lead stages</h4>
+          <p class="mono" style="font-size:13px;color:var(--text-dim)">new → contacted → site_visit_scheduled → visited → negotiating → closed | lost</p>
+        </div>
+        <div class="card">
+          <h4>Call outcomes</h4>
+          <p class="mono" style="font-size:13px;color:var(--text-dim)">connected · not_reachable · not_interested · interested · callback_requested · wrong_number</p>
+        </div>
+        <div class="card">
+          <h4>Listings</h4>
+          <p class="mono" style="font-size:13px;color:var(--text-dim)">rent | outright · apartment · villa · plot · commercial · available | blocked | sold</p>
+        </div>
+        <div class="card">
+          <h4>Review states</h4>
+          <p class="mono" style="font-size:13px;color:var(--text-dim)">auto_accepted · needs_review · confirmed · rejected</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ 07 -->
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">07</span>
+      <h2>The rules the interface obeys</h2>
+    </div>
+
+    <div class="stack">
+      <p class="lede">
+        Every screen is judged against one question: can a busy agent do this
+        one-handed, in under fifteen seconds, with one thumb? These follow from
+        it.
+      </p>
+
+      <div class="grid-2">
+        <div class="card">
+          <h3>One primary action per screen</h3>
+          <p>Secondary actions go behind a menu, never beside the primary one.
+            The busiest role on the busiest day will mis-tap otherwise.</p>
+        </div>
+        <div class="card">
+          <h3>Primary actions sit low</h3>
+          <p>The most common action on a screen belongs in the bottom third,
+            where a thumb already is — not at the top, where a mouse would be.</p>
+        </div>
+        <div class="card">
+          <h3>Tap, don't type</h3>
+          <p>Chips and toggles wherever the option set is known. Free text only
+            where it genuinely must be: remarks and notes.</p>
+        </div>
+        <div class="card">
+          <h3>Status is never colour alone</h3>
+          <p>Always a colour <em>and</em> a label — colourblind-safe, and the
+            label is what actually gets read in sun glare.</p>
+        </div>
+        <div class="card">
+          <h3>Dark surfaces mean &ldquo;trust this&rdquo;</h3>
+          <p>Ink is reserved for what the owner most needs to rely on. If
+            everything were a dark card, the signal would be worth nothing.</p>
+        </div>
+        <div class="card">
+          <h3>Every control answers the thumb</h3>
+          <p>A press scales the control 3% in 80ms and releases over 220ms.
+            Fast in, slow out — equal timings are what make web apps feel
+            rubbery rather than physical.</p>
+        </div>
+      </div>
+
+      <div class="note">
+        <p>
+          <strong>Publishing beats withholding.</strong> It runs through the
+          whole product. A low-confidence extracted listing is shown and
+          flagged, not hidden — an agent would rather sanity-check a flat than
+          never see it. The flag is what keeps that honest.
+        </p>
+      </div>
+    </div>
+  </section>
+
+
+  <section>
+    <div class="sec-head">
+      <span class="sec-num">A</span>
+      <h2>Master prompt for the redesign</h2>
+    </div>
+
+    <div class="stack-lg">
+      <p class="lede">
+        Written to be pasted whole — to a designer, an agency, or an AI coding
+        agent. Everything in it is true of the shipped product. Where it states
+        a constraint, that constraint is enforced in the API and cannot be
+        designed around.
+      </p>
+
+      <div class="prompt-block">
+        <p><strong>You are redesigning Balaji CRM</strong>, an internal tool used by
+        one small real-estate brokerage in Mumbai. It is not a SaaS product, it has
+        no marketing site, and it will never have public users. Roughly a dozen
+        people use it, most of them on a phone, most of them outdoors.</p>
+        <p style="margin-top:10px">Your job is to raise the visual and interaction
+        quality of the product without breaking the three things it exists to do,
+        and without making it slower to operate. Read the whole brief before
+        proposing a direction.</p>
+      </div>
+
+      <div class="stack">
+        <h3>Context to carry in</h3>
+        <p>Sections 01 to 07 of this document are the brief. The recipient needs
+          all of it: what the product is, the three role-surfaces, every screen and
+          who reaches it, the fixed vocabularies, and the rules the interface
+          already obeys.</p>
+      </div>
+
+      <div class="stack">
+        <h3>Hard constraints — the part most likely to be violated</h3>
+        <p>A design that breaks one of these is not a design that needs revision.
+          It is a design for a different product.</p>
+        <div class="rule-list">
+          <div class="rule-item"><span>01</span><p><strong>A Cold Caller must never see the lead book or the inventory.</strong> Not filtered, not partial, not &ldquo;just the matching flat&rdquo;. The endpoints refuse the role. Any concept showing a caller more than one client at a time is out.</p></div>
+          <div class="rule-item"><span>02</span><p><strong>Ownership is never self-service.</strong> No design may offer an Agent a way to reassign a lead to themselves.</p></div>
+          <div class="rule-item"><span>03</span><p><strong>Export, delete, import and audit are Owner-only.</strong> Do not design a bulk action into a shared surface.</p></div>
+          <div class="rule-item"><span>04</span><p><strong>Status is never colour alone.</strong> Always colour and a text label — colourblind-safe, and the label is what gets read in sun glare.</p></div>
+          <div class="rule-item"><span>05</span><p><strong>One primary action per screen.</strong> Secondary actions go behind a menu, never beside the primary one.</p></div>
+          <div class="rule-item"><span>06</span><p><strong>Primary actions sit in the bottom third on mobile</strong>, where a thumb already is.</p></div>
+          <div class="rule-item"><span>07</span><p><strong>Minimise typing.</strong> Chips and toggles wherever the option set is known; free text only for remarks and notes.</p></div>
+          <div class="rule-item"><span>08</span><p><strong>Every core action must work at 375px, one-handed, in under fifteen seconds.</strong> This is the test every screen is judged against.</p></div>
+          <div class="rule-item"><span>09</span><p><strong>It is an installed PWA on iOS.</strong> It renders under the status bar, so every top edge needs the safe-area inset and the dock needs the home-indicator inset.</p></div>
+          <div class="rule-item"><span>10</span><p><strong>The API is on a free tier that sleeps.</strong> Some screens wait seconds for data. Loading is a design state, not an afterthought.</p></div>
+        </div>
+      </div>
+
+      <div class="stack">
+        <h3>What is actually wrong today</h3>
+        <p>Be specific about what is being fixed. In order of leverage:</p>
+        <ol>
+          <li><strong>The product reads as competent but joyless.</strong> Correct hierarchy, correct spacing, very little personality — a design system applied rather than a product designed.</li>
+          <li><strong>The three role-homes are underdeveloped.</strong> <code>/</code> does the least work of any screen, and it is the first screen every user opens.</li>
+          <li><strong>Empty and loading states are thin.</strong> A new firm's first week is mostly empty screens, and they currently say very little.</li>
+          <li><strong>The inventory feed console is dense and technical</strong>, speaking closer to the database than to the owner.</li>
+          <li><strong>Density is uniform.</strong> A caller between two calls and an owner reviewing at 9pm get the same information rhythm.</li>
+          <li><strong>The desktop Owner dashboard should read as a command centre</strong> and currently does not.</li>
+        </ol>
+      </div>
+
+      <div class="stack">
+        <h3>What to deliver, in this order</h3>
+        <ol>
+          <li>A stated direction — palette, type pairing, layout concept — in a paragraph, <em>before</em> any screens.</li>
+          <li>The three role-homes. Highest leverage, weakest today.</li>
+          <li>Then the call console, lead detail, inventory list and listing detail, escalation inbox.</li>
+          <li>Mobile at 375px first, every time. Desktop after, and not the mobile layout stretched wide.</li>
+          <li>Every state for every screen: loaded, loading, empty, error — and once per role where the role changes what is shown.</li>
+          <li>A note on any design token changed, and why.</li>
+        </ol>
+      </div>
+
+      <div class="stack">
+        <h3>Do not</h3>
+        <div class="dont">
+          <ul>
+            <li>Do not propose a generic SaaS dashboard. The reference points are consumer apps with confident dark surfaces and tactile cards, not admin panels.</li>
+            <li>Do not add a navigation level. The flat hierarchy is load-bearing for one-handed use.</li>
+            <li>Do not use colour as the only carrier of meaning anywhere.</li>
+            <li>Do not introduce a component library whose look overrides the identity.</li>
+            <li>Do not design screens that assume fast data.</li>
+            <li>Do not solve &ldquo;it feels dead&rdquo; with more animation. That was a feedback problem and is largely fixed; the remaining gap is compositional, not kinetic.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card card-ink">
+        <h4>How to use it</h4>
+        <h3>Agree the direction before the work is spent</h3>
+        <p><strong>With an AI coding agent</strong> — paste the brief, then name the
+          single screen you want built and add: <em>&ldquo;mobile at 375px first;
+          show me the empty and loading states too.&rdquo;</em> The hard constraints
+          are the part that stops a plausible design from being unbuildable.</p>
+        <p><strong>With a human designer</strong> — send this document and ask for
+          the stated direction before any screens.</p>
+        <p><strong>Reviewing what comes back</strong> — check it against the hard
+          constraints first, not against taste.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Balaji CRM — product &amp; architecture reference</span>
+    <span>Owner · Agent · Cold Caller</span>
+    <span>Manager role is modelled but not yet activated</span>
+  </footer>
+
+</div></body></html>
