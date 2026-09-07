@@ -1,0 +1,667 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Balaji CRM — Technical &amp; Product Overview</title><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"><style>
+  :root {
+    --ink: #15141b;
+    --ink-soft: #211f2a;
+    --ink-line: #322f3d;
+    --ink-dim: #b9b4c6;
+
+    --ground: #f6f2ea;
+    --ground-deep: #ece6da;
+    --surface: #ffffff;
+    --surface-2: #fbf8f2;
+
+    --sandstone: #c9863e;
+    --sandstone-deep: #925f26;
+    --sandstone-wash: #f4e6d2;
+
+    --teal: #1e5c56;
+    --teal-wash: #d7e6e3;
+
+    --signal: #c33d26;
+    --signal-wash: #f8ddd6;
+
+    --text: #15141b;
+    --text-dim: #55505f;
+    --text-faint: #7c7688;
+    --rule: #e2dbcd;
+    --rule-strong: #d2c8b4;
+
+    --display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+    --body: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+    --measure: 68ch;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--text);
+    font-family: var(--body);
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px 96px; }
+
+  h1, h2, h3, h4 { font-family: var(--display); font-weight: 700; letter-spacing: -0.022em; text-wrap: balance; margin: 0; }
+
+  p { margin: 0; max-width: var(--measure); }
+  ul, ol { margin: 0; padding-left: 1.15em; max-width: var(--measure); }
+  li { margin: 0.3em 0; }
+  li::marker { color: var(--sandstone); }
+
+  code, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  code { font-size: 0.86em; background: var(--ground-deep); border: 1px solid var(--rule); border-radius: 5px; padding: 0.1em 0.38em; color: var(--text-dim); }
+  a { color: var(--sandstone-deep); }
+  :focus-visible { outline: 2px solid var(--sandstone); outline-offset: 3px; border-radius: 4px; }
+
+  .masthead { border-bottom: 1px solid var(--rule); padding: 72px 0 40px; display: flex; flex-direction: column; gap: 22px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.2em; color: var(--sandstone-deep); }
+  .masthead h1 { font-size: clamp(38px, 6.2vw, 62px); line-height: 1.02; }
+  .standfirst { font-size: 19px; line-height: 1.6; color: var(--text-dim); max-width: 60ch; }
+
+  .facts { display: flex; flex-wrap: wrap; gap: 10px 28px; padding-top: 6px; }
+  .fact { display: flex; flex-direction: column; gap: 2px; }
+  .fact dt { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; color: var(--text-faint); }
+  .fact dd { margin: 0; font-size: 14px; font-weight: 600; color: var(--text); }
+
+  section { padding-top: 64px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; border-bottom: 1px solid var(--rule); padding-bottom: 12px; margin-bottom: 28px; }
+  .sec-num { font-family: var(--mono); font-size: 12px; color: var(--sandstone); letter-spacing: 0.08em; flex-shrink: 0; }
+  .sec-head h2 { font-size: clamp(23px, 3vw, 30px); line-height: 1.15; }
+
+  .stack { display: flex; flex-direction: column; gap: 18px; }
+  .stack-lg { display: flex; flex-direction: column; gap: 34px; }
+
+  h3 { font-size: 18px; letter-spacing: -0.012em; margin-bottom: 2px; }
+  h4 { font-family: var(--body); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-faint); }
+
+  .card { background: var(--surface); border: 1px solid var(--rule); border-radius: 18px; padding: 22px 24px; display: flex; flex-direction: column; gap: 12px; }
+  .card-ink { background: var(--ink); border-color: var(--ink-line); color: #f2eee6; }
+  .card-ink h3, .card-ink strong { color: #ffffff; }
+  .card-ink p, .card-ink li { color: var(--ink-dim); }
+  .card-ink h4 { color: #8b869c; }
+  .card-ink code { background: var(--ink-soft); border-color: var(--ink-line); color: var(--ink-dim); }
+
+  .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(268px, 1fr)); gap: 16px; }
+  .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+
+  .pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 3px 10px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; white-space: nowrap; }
+  .pill::before { content: ""; width: 5px; height: 5px; border-radius: 999px; background: currentColor; opacity: 0.75; }
+  .p-sand   { background: var(--sandstone-wash); color: var(--sandstone-deep); }
+  .p-teal   { background: var(--teal-wash);      color: var(--teal); }
+  .p-signal { background: var(--signal-wash);    color: var(--signal); }
+  .p-mute   { background: var(--ground-deep);    color: var(--text-dim); }
+
+  .scroll { overflow-x: auto; border-radius: 14px; border: 1px solid var(--rule); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; background: var(--surface); min-width: 520px; }
+  th { text-align: left; font-family: var(--body); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.09em; color: var(--text-faint); padding: 11px 16px; background: var(--surface-2); border-bottom: 1px solid var(--rule); white-space: nowrap; }
+  td { padding: 11px 16px; border-bottom: 1px solid var(--rule); vertical-align: top; color: var(--text-dim); }
+  tbody tr:last-child td { border-bottom: 0; }
+  td strong { color: var(--text); font-weight: 600; }
+  td.mono, th.mono { font-family: var(--mono); font-size: 12.5px; }
+  .yes { color: var(--teal); font-weight: 700; }
+  .no  { color: var(--text-faint); }
+
+  .flow { display: flex; flex-direction: column; gap: 0; }
+  .step { display: grid; grid-template-columns: 30px 1fr; gap: 16px; position: relative; padding-bottom: 22px; }
+  .step:last-child { padding-bottom: 0; }
+  .step::before { content: ""; position: absolute; left: 14px; top: 26px; bottom: -4px; width: 2px; background: linear-gradient(to bottom, var(--rule-strong) 0%, var(--rule-strong) 88%, transparent 100%); }
+  .step:last-child::before { display: none; }
+  .node { width: 30px; height: 30px; border-radius: 999px; display: grid; place-items: center; font-family: var(--mono); font-size: 12px; font-weight: 500; background: var(--surface); border: 2px solid var(--rule-strong); color: var(--text-faint); position: relative; z-index: 1; }
+  .node-on { background: var(--sandstone-deep); border-color: var(--sandstone-deep); color: var(--surface); }
+  .node-end { background: var(--teal); border-color: var(--teal); color: var(--ground); }
+  .step-body { display: flex; flex-direction: column; gap: 5px; padding-top: 2px; }
+  .step-body strong { font-size: 15.5px; font-weight: 700; color: var(--text); }
+  .step-body p { font-size: 14.5px; color: var(--text-dim); }
+  .step-where { font-family: var(--mono); font-size: 11.5px; color: var(--sandstone-deep); }
+
+  .states { display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch; }
+  .state { flex: 1 1 150px; border: 1px solid var(--rule); border-radius: 12px; padding: 12px 14px; background: var(--surface); display: flex; flex-direction: column; gap: 5px; }
+  .state .mono { font-size: 12.5px; font-weight: 500; color: var(--text); }
+  .state span:last-child { font-size: 12.5px; color: var(--text-dim); line-height: 1.45; }
+  .state-term { border-left: 3px solid var(--teal); }
+  .state-bad  { border-left: 3px solid var(--signal); }
+  .state-mid  { border-left: 3px solid var(--sandstone); }
+
+  .note { border-left: 3px solid var(--sandstone); padding: 2px 0 2px 18px; display: flex; flex-direction: column; gap: 8px; }
+  .note p { font-size: 15px; color: var(--text-dim); }
+
+  .lede { font-size: 17px; color: var(--text-dim); max-width: 62ch; }
+
+  .kv { display: flex; flex-direction: column; gap: 9px; }
+  .kv-row { display: grid; grid-template-columns: 176px 1fr; gap: 14px; font-size: 14px; align-items: baseline; }
+  .kv-row > span:first-child { font-family: var(--mono); font-size: 12px; color: var(--text-faint); }
+  .kv-row > span:last-child { color: var(--text-dim); }
+
+  footer { margin-top: 76px; padding-top: 22px; border-top: 1px solid var(--rule); font-size: 13px; color: var(--text-faint); display: flex; flex-wrap: wrap; gap: 8px 26px; }
+
+  /* ------------------------------------------------------- diagram boxes */
+  .diagram { display: flex; flex-direction: column; gap: 10px; background: var(--surface); border: 1px solid var(--rule); border-radius: 16px; padding: 24px; }
+  .diagram-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: stretch; justify-content: center; }
+  .box { border: 1.5px solid var(--rule-strong); border-radius: 12px; padding: 12px 16px; background: var(--surface-2); display: flex; flex-direction: column; gap: 3px; min-width: 150px; text-align: center; }
+  .box strong { font-size: 13.5px; color: var(--text); }
+  .box span { font-size: 11.5px; color: var(--text-faint); font-family: var(--mono); }
+  .box-accent { border-color: var(--sandstone-deep); background: var(--sandstone-wash); }
+  .box-teal { border-color: var(--teal); background: var(--teal-wash); }
+  .box-ink { border-color: var(--ink-line); background: var(--ink); }
+  .box-ink strong { color: #fff; }
+  .box-ink span { color: var(--ink-dim); }
+  .arrow-down { align-self: center; font-family: var(--mono); color: var(--text-faint); font-size: 18px; }
+  .diagram-caption { font-size: 12.5px; color: var(--text-faint); text-align: center; padding-top: 4px; }
+
+  @media (max-width: 620px) {
+    .wrap { padding: 0 18px 72px; }
+    .masthead { padding-top: 48px; }
+    .kv-row { grid-template-columns: 1fr; gap: 2px; }
+    .sec-head { flex-direction: column; gap: 4px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+  /* ---------------------------------------------------------------- print */
+  @page { size: A4; margin: 16mm 14mm 18mm; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; background: var(--ground); }
+  body { font-size: 10.5pt; line-height: 1.55; background: var(--ground); }
+  .wrap { max-width: none; padding: 0; }
+  .card, .step, .state, .note, .fact, tr, .sec-head, .box { break-inside: avoid; }
+  h1, h2, h3, h4 { break-after: avoid; }
+  .flow, .scroll { break-inside: auto; }
+  section { break-before: page; padding-top: 0; }
+  .cover { break-after: page; }
+  .scroll { overflow: visible; }
+  table { min-width: 0; font-size: 9.5pt; }
+  th, td { padding: 7px 11px; }
+  .masthead { display: none; }
+  section { padding-top: 0; }
+  .sec-head { margin-bottom: 20px; padding-top: 4px; }
+  footer { break-before: avoid; }
+
+  .cover { min-height: 250mm; display: flex; flex-direction: column; justify-content: space-between; padding: 6mm 0 0; }
+  .cover-top { display: flex; flex-direction: column; gap: 20px; }
+  .cover h1 { font-size: 52pt; line-height: 0.98; letter-spacing: -0.03em; }
+  .cover .standfirst { font-size: 13pt; max-width: 46ch; }
+  .cover-rule { height: 4px; background: var(--sandstone); width: 84px; }
+  .cover-meta { border-top: 1px solid var(--rule); padding-top: 14px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px 30px; }
+
+  .toc { display: flex; flex-direction: column; gap: 7px; }
+  .toc-row { display: grid; grid-template-columns: 26px 1fr; gap: 12px; font-size: 11pt; align-items: baseline; }
+  .toc-row span:first-child { font-family: var(--mono); font-size: 9pt; color: var(--sandstone-deep); }
+  .toc-row span:last-child { font-weight: 600; }
+</style></head><body><div class="wrap">
+
+<div class="cover">
+  <div class="cover-top">
+    <div class="cover-rule"></div>
+    <span class="eyebrow">Technical &amp; product overview · September 2026</span>
+    <h1>Balaji CRM</h1>
+    <p class="standfirst">An internal CRM for a small real-estate brokerage. This document
+      covers the problem it solves, the solution as built, the full technology stack, the
+      system architecture, and the deployment topology it actually runs on.</p>
+  </div>
+
+  <div class="toc">
+    <h4>Contents</h4>
+    <div class="toc-row"><span>01</span><span>Problem statement</span></div>
+    <div class="toc-row"><span>02</span><span>The solution</span></div>
+    <div class="toc-row"><span>03</span><span>Technology stack</span></div>
+    <div class="toc-row"><span>04</span><span>System architecture</span></div>
+    <div class="toc-row"><span>05</span><span>End-to-end data flows</span></div>
+    <div class="toc-row"><span>06</span><span>Data model</span></div>
+    <div class="toc-row"><span>07</span><span>Roles, permissions &amp; security</span></div>
+    <div class="toc-row"><span>08</span><span>Deployment stack</span></div>
+    <div class="toc-row"><span>09</span><span>Operating costs &amp; known limits</span></div>
+  </div>
+
+  <div class="cover-meta">
+    <div class="fact"><dt>Primary surface</dt><dd>Mobile-first PWA</dd></div>
+    <div class="fact"><dt>Live roles</dt><dd>Owner · Agent · Cold Caller</dd></div>
+    <div class="fact"><dt>Inventory source</dt><dd>WhatsApp groups, read automatically</dd></div>
+    <div class="fact"><dt>Core stack</dt><dd>Next.js · FastAPI · PostgreSQL</dd></div>
+  </div>
+</div>
+
+<header class="masthead">
+  <span class="eyebrow">Technical &amp; product overview</span>
+  <h1>Balaji CRM</h1>
+  <p class="standfirst">An internal CRM for a small real-estate brokerage, covering the
+    problem, the solution, the stack, the architecture, and the deployment.</p>
+</header>
+
+<!-- ============================================================ 01 -->
+<section>
+  <div class="sec-head"><span class="sec-num">01</span><h2>Problem statement</h2></div>
+  <div class="stack-lg">
+    <p class="lede">A small real-estate brokerage — an owner plus a staff of closing
+      agents and a cold-calling team — currently runs entirely on WhatsApp, phone calls,
+      and scattered notes. That produces three concrete, named problems.</p>
+
+    <div class="grid-3">
+      <div class="card">
+        <h4>Problem 1</h4>
+        <h3>No unified inventory</h3>
+        <p>Property listings are scattered across hundreds of WhatsApp broker groups.
+          Agents cannot quickly find matching inventory for a client's budget and
+          location — they scroll chat history and rely on memory.</p>
+      </div>
+      <div class="card">
+        <h4>Problem 2</h4>
+        <h3>No owner visibility</h3>
+        <p>The owner has no way to know which agent is showing which property to which
+          client, or whether a lead is actually being followed up. Oversight depends on
+          staff volunteering the information.</p>
+      </div>
+      <div class="card">
+        <h4>Problem 3</h4>
+        <h3>Data leakage risk</h3>
+        <p>There is no access control or audit trail. An agent can walk away with the
+          firm's entire client list — a real, stated risk when staff leave to join a
+          competitor or freelance on the side.</p>
+      </div>
+    </div>
+
+    <div class="note">
+      <p><strong>The realistic threat is not an external hacker.</strong> It is an
+        insider with legitimate login access trying to extract the client/lead list.
+        Every access-control decision in this system is designed against that specific
+        threat, not a generic one — see §7.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ 02 -->
+<section>
+  <div class="sec-head"><span class="sec-num">02</span><h2>The solution</h2></div>
+  <div class="stack-lg">
+    <p class="lede">Balaji CRM answers each of the three problems with a structural
+      mechanism, not a bolted-on feature — meaning the fix is enforced in the query
+      layer or middleware, so it cannot be forgotten by some future screen.</p>
+
+    <div class="grid-3">
+      <div class="card card-ink">
+        <h4>→ Problem 1</h4>
+        <h3>Automated WhatsApp inventory feed</h3>
+        <p>A gateway service reads the firm's monitored WhatsApp groups directly. An
+          LLM extracts structured fields (location, building, BHK, price, rent vs.
+          sale) from free-text posts, de-duplicates reposts of the same flat, and
+          writes one unified, searchable, filterable inventory — with the original
+          message retained for provenance.</p>
+      </div>
+      <div class="card card-ink">
+        <h4>→ Problem 2</h4>
+        <h3>Structural activity logging</h3>
+        <p>Every call, site visit, and property-shown-to-client event is its own
+          row, not a mutable field. The owner's live activity feed reads directly
+          from that same table, so "what the owner sees" is always in sync with
+          "what actually happened," with no separate reporting pipeline to drift
+          out of date.</p>
+      </div>
+      <div class="card card-ink">
+        <h4>→ Problem 3</h4>
+        <h3>Role-scoped access + immutable audit log</h3>
+        <p>Role-based access control is enforced at the query layer (an agent's
+          query is scoped to their own leads at the SQL level, not filtered in the
+          UI). Bulk export exists only for Owner/Manager, every export is itself
+          logged, and the audit log is structural middleware — not something an
+          endpoint has to remember to call.</p>
+      </div>
+    </div>
+
+    <h3>What is actually built</h3>
+    <div class="grid-2">
+      <div class="card">
+        <h4>Core CRM</h4>
+        <ul>
+          <li>Role-scoped contacts/leads, with masked phone numbers until a
+            qualifying interaction is logged</li>
+          <li>Property inventory: manual entries + WhatsApp-sourced listings in one
+            searchable, filterable view</li>
+          <li>Site-visit / showing tracking (“who showed what to whom, when”)</li>
+          <li>One-tap call logging with outcome + temperature + notes</li>
+          <li>Owner activity feed, escalation inbox, team performance view</li>
+          <li>Immutable, append-only audit log with an audit viewer for the Owner</li>
+          <li>Lead import (bulk CSV/XLSX) with dedup against existing contacts</li>
+          <li>Web-push notifications (follow-ups, escalations)</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>WhatsApp inventory pipeline</h4>
+        <ul>
+          <li>Node/Baileys gateway holds a real WhatsApp Web session and forwards
+            group messages to the backend over a shared-secret webhook</li>
+          <li>Messages are journalled raw before parsing, so a prompt fix can be
+            replayed over history without re-reading WhatsApp</li>
+          <li>Groq-hosted LLM extraction with a JSON schema, cheap pre-filtering of
+            obvious non-listing chatter, and multi-model rate-limit rotation</li>
+          <li>Fuzzy dedup merges reposts of the same flat into one listing with
+            multiple sightings, rather than duplicating rows</li>
+          <li>A pairing flow inside the app itself (QR code, group picker) — no
+            terminal access needed once the gateway process is running</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ 03 -->
+<section>
+  <div class="sec-head"><span class="sec-num">03</span><h2>Technology stack</h2></div>
+  <div class="stack-lg">
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Layer</th><th>Choice</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Frontend</strong></td><td class="mono">Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 4</td><td>One codebase, mobile-first, installable as a PWA, no App Store review cycle</td></tr>
+          <tr><td><strong>Backend API</strong></td><td class="mono">FastAPI 0.115 · Python 3.12 · Pydantic 2 · SQLAlchemy 2.0 · Alembic</td><td>Async-friendly, fast to build REST APIs, good fit for background extraction jobs</td></tr>
+          <tr><td><strong>Database</strong></td><td class="mono">PostgreSQL</td><td>Relational integrity for leads/deals/roles; JSONB where fields are genuinely flexible (audit detail, raw WhatsApp message)</td></tr>
+          <tr><td><strong>Auth</strong></td><td class="mono">JWT (python-jose) + bcrypt (passlib) · httpOnly cookie sessions</td><td>Role claim embedded in token; sliding-expiry sessions with an absolute cap</td></tr>
+          <tr><td><strong>WhatsApp gateway</strong></td><td class="mono">Node 22 · @whiskeysockets/baileys 6.7 (WhatsApp Web, multi-device)</td><td>No official WhatsApp Business API can read group messages — this is the only way to see broker-group traffic</td></tr>
+          <tr><td><strong>LLM extraction</strong></td><td class="mono">Groq API (`groq` SDK) · JSON-schema structured output</td><td>High throughput, low cost for a copy-out-of-messy-text task, not a reasoning task; models rotate under per-model rate limits</td></tr>
+          <tr><td><strong>Dedup</strong></td><td class="mono">rapidfuzz</td><td>Fuzzy string matching for contacts and property listings</td></tr>
+          <tr><td><strong>Notifications</strong></td><td class="mono">Web Push (pywebpush + VAPID)</td><td>Native to the PWA approach, no separate mobile push service needed</td></tr>
+          <tr><td><strong>Spreadsheet import/export</strong></td><td class="mono">openpyxl</td><td>Bulk lead import, Owner/Manager exports</td></tr>
+          <tr><td><strong>Testing</strong></td><td class="mono">pytest (backend, 100+ tests) · tsc + `next build` (frontend)</td><td>Backend logic (RBAC, dedup, extraction) is where correctness risk concentrates</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h4>Why a PWA, not a native app</h4>
+        <p>One codebase instead of two; faster iteration with no App Store review
+          gate; service workers give good-enough offline viewing of recently-loaded
+          leads/properties. If the team ever needs deep native capability (background
+          location, offline writes), the FastAPI backend and data model don't need to
+          change — only the frontend layer would be rebuilt.</p>
+      </div>
+      <div class="card">
+        <h4>Why Groq for extraction</h4>
+        <p>A busy brokerage generates thousands of messages a day, and the task is
+          structured copying out of messy text, not reasoning — it doesn't need a
+          frontier model. The trade-off: Groq has no prompt caching, so the system
+          prompt is repaid on every call, and free-tier rate limits are tight enough
+          to require multi-model rotation (see §8).</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ 04 -->
+<section>
+  <div class="sec-head"><span class="sec-num">04</span><h2>System architecture</h2></div>
+  <div class="stack-lg">
+    <div class="diagram">
+      <div class="diagram-row">
+        <div class="box box-accent"><strong>Next.js PWA</strong><span>web/ — role-aware UI, service worker</span></div>
+      </div>
+      <div class="arrow-down">│ REST · JSON · JWT in httpOnly cookie</div>
+      <div class="diagram-row">
+        <div class="box box-ink"><strong>FastAPI backend</strong><span>backend/app — RBAC + audit middleware</span></div>
+      </div>
+      <div class="arrow-down">│</div>
+      <div class="diagram-row">
+        <div class="box"><strong>PostgreSQL</strong><span>primary store</span></div>
+        <div class="box"><strong>Extraction worker</strong><span>backend/app/workers/whatsapp.py</span></div>
+        <div class="box"><strong>Audit log</strong><span>append-only, middleware-written</span></div>
+      </div>
+      <div class="arrow-down">│</div>
+      <div class="diagram-row">
+        <div class="box box-teal"><strong>WhatsApp gateway</strong><span>gateway/ — Node + Baileys, separate service</span></div>
+        <div class="box box-teal"><strong>Groq LLM</strong><span>structured extraction</span></div>
+      </div>
+      <div class="diagram-caption">Every arrow is an HTTP call carrying a shared secret, not a shared process — the gateway and the extraction worker can fail independently without taking the core CRM down.</div>
+    </div>
+
+    <h3>Component notes</h3>
+    <div class="grid-2">
+      <div class="card">
+        <h4>Frontend — Next.js PWA</h4>
+        <p>Role-aware routing: Owner, Agent, and Cold Caller each land on a
+          different home surface. The browser never calls FastAPI directly — every
+          request goes through a Next.js API route (<code>/api/crm/[...path]</code>)
+          that attaches the session JWT from an httpOnly cookie, so the API base URL
+          is never exposed to client code.</p>
+      </div>
+      <div class="card">
+        <h4>Backend — FastAPI</h4>
+        <p><strong>RBAC middleware</strong> (<code>app/rbac.py</code>, <code>app/scoping.py</code>)
+          resolves the caller's role on every request and scopes queries accordingly.
+          <strong>Audit middleware</strong> (<code>app/audit.py</code>) wraps every
+          read/write on sensitive resources. Neither is opt-in per endpoint.</p>
+      </div>
+      <div class="card">
+        <h4>Database — PostgreSQL</h4>
+        <p>Soft delete everywhere (<code>deleted_at</code>), never hard delete —
+          the audit trail must survive record deletion. Every interaction (call,
+          visit, remark) is its own row in <code>call_logs</code>/<code>activities</code>,
+          not a mutable field on the lead.</p>
+      </div>
+      <div class="card">
+        <h4>WhatsApp gateway — isolated by design</h4>
+        <p>Kept as a separate Node service, deliberately outside the main FastAPI
+          app: it is the one component built on an unofficial integration (WhatsApp
+          Web, not the Business API), and isolating it limits the blast radius if
+          the session drops or WhatsApp rate-limits it — it cannot take down the
+          core CRM.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ 05 -->
+<section>
+  <div class="sec-head"><span class="sec-num">05</span><h2>End-to-end data flows</h2></div>
+  <div class="stack-lg">
+    <h3>WhatsApp listing → searchable inventory</h3>
+    <div class="flow">
+      <div class="step"><div class="node node-on">1</div><div class="step-body"><strong>Message posted</strong><p>In a monitored WhatsApp group.</p></div></div>
+      <div class="step"><div class="node node-on">2</div><div class="step-body"><strong>Gateway relays it</strong><p>Raw text + metadata forwarded to <code>/internal/whatsapp/ingest</code>, authenticated with a shared secret.</p></div></div>
+      <div class="step"><div class="node node-on">3</div><div class="step-body"><strong>Raw message stored</strong><p>Persisted before parsing, so a prompt fix can be replayed over history.</p></div></div>
+      <div class="step"><div class="node node-on">4</div><div class="step-body"><strong>LLM extraction</strong><p>Groq turns free text into structured fields: location, building, BHK, price, rent vs. sale.</p></div></div>
+      <div class="step"><div class="node node-on">5</div><div class="step-body"><strong>Dedup check</strong><p>Fuzzy-matched against existing <code>properties</code> rows by building + BHK + price.</p></div></div>
+      <div class="step"><div class="node node-end">6</div><div class="step-body"><strong>Inventory updated</strong><p>New listing inserted, or an existing one gains another sighting — queryable immediately by any staff with inventory-view permission.</p></div></div>
+    </div>
+
+    <h3>Cold call → owner visibility</h3>
+    <div class="flow">
+      <div class="step"><div class="node node-on">1</div><div class="step-body"><strong>Call placed</strong><p>Cold caller works their queue, logs outcome via the remark form.</p></div></div>
+      <div class="step"><div class="node node-on">2</div><div class="step-body"><strong>Call log written</strong><p><code>POST /calls</code> — its own row, not a field update.</p></div></div>
+      <div class="step"><div class="node node-on">3</div><div class="step-body"><strong>Audit entry written</strong><p>By middleware, automatically.</p></div></div>
+      <div class="step"><div class="node node-on">4</div><div class="step-body"><strong>Follow-up or escalation</strong><p>A qualifying outcome auto-creates a follow-up task; a flagged call lands in the owner's escalation inbox with a push notification.</p></div></div>
+      <div class="step"><div class="node node-end">5</div><div class="step-body"><strong>Owner sees it live</strong><p>The owner's activity feed reads the same table — no separate reporting pipeline to fall out of sync.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ 06 -->
+<section>
+  <div class="sec-head"><span class="sec-num">06</span><h2>Data model</h2></div>
+  <div class="stack-lg">
+    <p class="lede">Core tables, in the terms the product uses. Full DDL lives in
+      <code>docs/DATA_MODEL.md</code>.</p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Table</th><th>Purpose</th><th>Structural note</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">users</td><td>Staff accounts, role, manager hierarchy</td><td>Role drives every RBAC scoping decision</td></tr>
+          <tr><td class="mono">contacts</td><td>Leads/clients</td><td><code>phone_masked</code> hides full number until a qualifying interaction is logged</td></tr>
+          <tr><td class="mono">properties</td><td>Inventory, manual or WhatsApp-sourced</td><td><code>source</code> + <code>raw_message</code> preserve provenance</td></tr>
+          <tr><td class="mono">property_interests</td><td>Who showed what to whom, and when</td><td>Composite key on <code>(contact_id, property_id, shown_at)</code> — every showing is its own event</td></tr>
+          <tr><td class="mono">call_logs</td><td>Every call, outcome, temperature</td><td>Own row per call, never overwrites the lead</td></tr>
+          <tr><td class="mono">activities</td><td>Site visits, notes, stage changes</td><td>Backs both the audit trail and the owner's live feed</td></tr>
+          <tr><td class="mono">audit_log</td><td>Append-only action log</td><td>No <code>deleted_at</code>; UPDATE/DELETE revoked at the DB role level where possible</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ 07 -->
+<section>
+  <div class="sec-head"><span class="sec-num">07</span><h2>Roles, permissions &amp; security</h2></div>
+  <div class="stack-lg">
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Capability</th><th>Owner</th><th>Agent</th><th>Cold Caller</th></tr></thead>
+        <tbody>
+          <tr><td>View all contacts firm-wide</td><td class="yes">Yes</td><td class="no">Own only</td><td class="no">No</td></tr>
+          <tr><td>Bulk export contacts</td><td class="yes">Yes</td><td class="no">No</td><td class="no">No</td></tr>
+          <tr><td>View unmasked phone/email</td><td class="yes">Yes</td><td class="no">After first logged interaction</td><td class="no">Number of lead being called only</td></tr>
+          <tr><td>Delete a contact or property</td><td class="yes">Yes</td><td class="no">No</td><td class="no">No</td></tr>
+          <tr><td>View firm-wide activity feed</td><td class="yes">Yes</td><td class="no">Own activity only</td><td class="no">Own activity only</td></tr>
+          <tr><td>View the audit log</td><td class="yes">Full</td><td class="no">No</td><td class="no">No</td></tr>
+          <tr><td>Configure WhatsApp ingestion</td><td class="yes">Yes</td><td class="no">No</td><td class="no">No</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h4>Threat model</h4>
+        <p>Not an external hacker — an insider with legitimate login access trying to
+          extract the client/lead list before leaving. Mitigations: mandatory
+          pagination and masking (raises the cost of manual scraping), no export
+          capability for Agent/Cold Caller at the API level (not just hidden in the
+          UI), and prompt session invalidation on deactivation.</p>
+      </div>
+      <div class="card">
+        <h4>Audit logging</h4>
+        <p>Structural, via FastAPI middleware wrapping every request that touches
+          contacts, properties, call logs, or an export endpoint — no endpoint has
+          to remember to log. Where the database allows it, UPDATE/DELETE on
+          <code>audit_log</code> is revoked from the application's own DB role, so
+          even the app's own credentials cannot rewrite history.</p>
+      </div>
+      <div class="card">
+        <h4>Cold Caller scope</h4>
+        <p>Sees exactly one surface — their queue — and of the client only a name
+          and mobile number. No lead list, no lead detail, no inventory. Enforced as
+          capabilities the role simply does not hold, so the missing nav items are a
+          consequence of the API refusing the request, not the only control.</p>
+      </div>
+      <div class="card">
+        <h4>Sessions</h4>
+        <p>Sliding expiry with an absolute cap: a token renews itself while in use
+          (<code>SESSION_IDLE_DAYS</code>, default 30) but can never live past a fixed
+          ceiling from first login (<code>SESSION_ABSOLUTE_DAYS</code>, default 90) —
+          so no amount of use makes a session permanent.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ 08 -->
+<section>
+  <div class="sec-head"><span class="sec-num">08</span><h2>Deployment stack</h2></div>
+  <div class="stack-lg">
+    <div class="diagram">
+      <div class="diagram-row">
+        <div class="box box-accent"><strong>Vercel</strong><span>Next.js frontend (web/)</span></div>
+        <div class="box box-ink"><strong>Render — Web Service</strong><span>FastAPI API (balaji-api)</span></div>
+        <div class="box"><strong>Render — PostgreSQL</strong><span>balaji-db</span></div>
+      </div>
+      <div class="arrow-down">│</div>
+      <div class="diagram-row">
+        <div class="box box-teal"><strong>Render — Background Worker</strong><span>extraction worker</span></div>
+        <div class="box box-teal"><strong>Office machine or Render Worker + disk</strong><span>WhatsApp gateway</span></div>
+      </div>
+      <div class="diagram-caption">HTTPS between Vercel and Render; internal Render network between the API and Postgres; the gateway reaches the API over the public internet with a shared secret.</div>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Piece</th><th>Host</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Frontend</strong></td><td>Vercel</td><td>Root directory set to <code>web</code>; framework auto-detected as Next.js</td></tr>
+          <tr><td><strong>API</strong></td><td>Render Web Service</td><td>Start command runs <code>alembic upgrade head</code> before <code>uvicorn</code>; health check on <code>/health</code></td></tr>
+          <tr><td><strong>Database</strong></td><td>Render PostgreSQL</td><td>Free tier for 90 days, then ~$7/mo; internal connection string used by the API</td></tr>
+          <tr><td><strong>Extraction worker</strong></td><td>Render Background Worker</td><td>Not available on Render's free plan — <code>EXTRACTION_IN_API=true</code> runs the same loop inside the API as a free-tier fallback</td></tr>
+          <tr><td><strong>WhatsApp gateway</strong></td><td>Office machine (recommended) or Render Worker + persistent disk</td><td>Holds the live WhatsApp Web session; needs a persistent disk to survive restarts without re-linking the account</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h4>Why the gateway is deployed separately</h4>
+        <p>It drives a real WhatsApp account over an unofficial integration and keeps
+          the linked-device session on disk. Running it on hardware the firm
+          controls keeps that blast radius visible; running it on Render works too,
+          but only with a paid persistent disk — without one, every deploy wipes the
+          session and forces a fresh QR re-link, which is the single most
+          account-flagging thing this process can do.</p>
+      </div>
+      <div class="card">
+        <h4>Extraction throughput</h4>
+        <p>Groq's free tier caps at 8,000 tokens/minute and 1,000 requests/day
+          <em>per model</em>. <code>EXTRACTION_MODEL</code> takes a comma-separated
+          list tried in order, so multiple model names become multiple independent
+          rate-limit buckets on the same key — a model on cooldown is skipped rather
+          than failing the batch.</p>
+      </div>
+    </div>
+
+    <h3>Configuration surface</h3>
+    <div class="kv">
+      <div class="kv-row"><span>render.yaml</span><span>Blueprint: database + API + extraction worker (and an optional, commented-out gateway service)</span></div>
+      <div class="kv-row"><span>JWT_SECRET</span><span>Generated by Render; rotating it invalidates every live session</span></div>
+      <div class="kv-row"><span>WHATSAPP_INGEST_SECRET</span><span>Shared between the API and the gateway; a mismatch is refused with a 403 that looks identical to a gateway that isn't running</span></div>
+      <div class="kv-row"><span>CORS_ORIGINS</span><span>Must include the Vercel domain, or every browser request fails as a CORS error</span></div>
+      <div class="kv-row"><span>GROQ_API_KEY</span><span>Required on both the API and the extraction worker</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ 09 -->
+<section>
+  <div class="sec-head"><span class="sec-num">09</span><h2>Operating costs &amp; known limits</h2></div>
+  <div class="stack-lg">
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Piece</th><th>Cost</th></tr></thead>
+        <tbody>
+          <tr><td>Vercel (Hobby)</td><td>Free</td></tr>
+          <tr><td>Render Postgres</td><td>Free for 90 days, then ~$7/mo</td></tr>
+          <tr><td>Render Web Service (API)</td><td>Free, sleeps after 15 min idle</td></tr>
+          <tr><td>Render Background Worker</td><td>Not free — ~$7/mo, needed only for the WhatsApp feed</td></tr>
+          <tr><td>Groq API</td><td>Usage-based; free tier is usable but rate-limited, only relevant if the WhatsApp feed is in use</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note">
+      <p><strong>A working CRM without the WhatsApp feed costs nothing beyond the
+        database, after the first 90 days.</strong> The feed is what introduces both
+        the recurring worker cost and the operational responsibility of keeping a
+        WhatsApp session alive.</p>
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <h4>Deliberate non-goals</h4>
+        <ul>
+          <li>No native mobile app — PWA only, by design (see §3)</li>
+          <li>No payment/commission processing</li>
+          <li>No public-facing, buyer-facing listing site — internal tool only</li>
+          <li>No legal/document e-signing workflows</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>What the security model does not attempt</h4>
+        <p>It cannot stop an agent from memorizing or manually writing down a small
+          number of contacts they're actively working — no software control fully
+          prevents this. The realistic goal is raising the cost and visibility of
+          large-scale extraction, not making leakage physically impossible. Device-level
+          MDM and screenshot prevention are explicitly out of scope for a small-team
+          internal tool.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <span>Balaji CRM — Technical &amp; product overview</span>
+  <span>Generated from the repository's own docs (README, TECH_STACK, ARCHITECTURE, PRD, DATA_MODEL, SECURITY_MODEL, ROLES_PERMISSIONS, DEPLOYMENT) and current source tree</span>
+</footer>
+
+</div></body></html>
