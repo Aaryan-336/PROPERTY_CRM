@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { AgentHome } from "@/components/home/AgentHome";
 import { ColdCallerHome } from "@/components/home/ColdCallerHome";
 import { OwnerHome } from "@/components/home/OwnerHome";
+import { VoiceQuickAdd } from "@/components/voice/VoiceQuickAdd";
 import { SESSION_EXPIRED_ROUTE, getCurrentUser } from "@/lib/session";
 
 /**
@@ -14,7 +15,18 @@ export default async function Home() {
   const user = await getCurrentUser();
   if (!user) redirect(SESSION_EXPIRED_ROUTE);
 
-  if (user.role === "owner") return <OwnerHome user={user} />;
-  if (user.role === "cold_caller") return <ColdCallerHome user={user} />;
-  return <AgentHome user={user} />;
+  const home =
+    user.role === "owner" ? (
+      <OwnerHome user={user} />
+    ) : user.role === "cold_caller" ? (
+      <ColdCallerHome user={user} />
+    ) : (
+      <AgentHome user={user} />
+    );
+  return (
+    <>
+      {home}
+      <VoiceQuickAdd role={user.role} variant="fab" />
+    </>
+  );
 }

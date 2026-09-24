@@ -562,3 +562,47 @@ export type MetaInsights = {
   totals: MetaInsightRow;
   via: string;
 };
+
+/* ---------------------------------------------------------------- Voice */
+
+export type VoiceIntent = "add_lead" | "add_inventory" | "set_reminder" | "log_follow_up";
+
+/** An AI draft. Never saved by itself -- the person edits and confirms it. */
+export type VoiceDraft = {
+  transcript: string;
+  intent: VoiceIntent | "unknown";
+  lead: {
+    first_name: string;
+    last_name: string | null;
+    phone: string | null;
+    budget_min: number | null;
+    budget_max: number | null;
+    preferred_locations: string[];
+    property_type_interest: string | null;
+    listing_type_interest: string | null;
+    bhk: number | null;
+    remarks: string | null;
+  } | null;
+  property: {
+    title: string | null;
+    location: string;
+    building: string | null;
+    property_type: string | null;
+    listing_type: string | null;
+    price: number | null;
+    bhk: number | null;
+    area_sqft: number | null;
+    furnishing: string | null;
+  } | null;
+  reminder: { title: string; due_at: string | null; contact_name: string | null } | null;
+  follow_up: { contact_name: string | null; note: string } | null;
+};
+
+export type CallRecordingDraft = {
+  transcript: string;
+  summary: string;
+  outcome: (typeof CALL_OUTCOMES)[number]["value"];
+  temperature: (typeof TEMPERATURES)[number]["value"] | null;
+  follow_up_at: string | null;
+  follow_up_note: string | null;
+};

@@ -24,16 +24,28 @@ const STATUSES = [
   { value: "sold", label: "Sold" },
 ] as const;
 
-export function NewPropertyForm() {
+/** Prefill, e.g. from a voice note. Every field stays editable before Save. */
+export type NewPropertyInitial = {
+  title?: string | null;
+  building?: string | null;
+  location?: string;
+  price?: number | null;
+  listing_type?: string | null;
+  property_type?: string | null;
+};
+
+export function NewPropertyForm({ initial }: { initial?: NewPropertyInitial } = {}) {
   const router = useRouter();
   const [form, setForm] = useState({
-    title: "",
-    building: "",
-    location: "",
-    price: "",
+    title: initial?.title ?? "",
+    building: initial?.building ?? "",
+    location: initial?.location ?? "",
+    price: initial?.price ? String(initial.price) : "",
   });
-  const [listingType, setListingType] = useState<string>("outright");
-  const [propertyType, setPropertyType] = useState<string | null>("apartment");
+  const [listingType, setListingType] = useState<string>(initial?.listing_type ?? "outright");
+  const [propertyType, setPropertyType] = useState<string | null>(
+    initial?.property_type ?? "apartment",
+  );
   const [status, setStatus] = useState<string>("available");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

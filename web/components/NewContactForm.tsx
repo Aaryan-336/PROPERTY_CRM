@@ -29,23 +29,43 @@ const PROPERTY_TYPES = [
   { value: "commercial", label: "Commercial" },
 ] as const;
 
-export function NewContactForm() {
+/** Prefill, e.g. from a voice note. Every field stays editable before Save. */
+export type NewContactInitial = {
+  first_name?: string;
+  last_name?: string | null;
+  phone?: string | null;
+  budget_min?: number | null;
+  budget_max?: number | null;
+  preferred_locations?: string[];
+  remarks?: string | null;
+  property_type_interest?: string | null;
+  listing_type_interest?: string | null;
+  bhk?: number | null;
+};
+
+export function NewContactForm({ initial }: { initial?: NewContactInitial } = {}) {
   const router = useRouter();
   const [form, setForm] = useState({
-    first_name: "",
-    last_name: "",
-    phone: "",
+    first_name: initial?.first_name ?? "",
+    last_name: initial?.last_name ?? "",
+    phone: initial?.phone ?? "",
     email: "",
-    budget_min: "",
-    budget_max: "",
-    preferred_locations: "",
-    remarks: "",
+    budget_min: initial?.budget_min ? String(initial.budget_min) : "",
+    budget_max: initial?.budget_max ? String(initial.budget_max) : "",
+    preferred_locations: initial?.preferred_locations?.join(", ") ?? "",
+    remarks: initial?.remarks ?? "",
   });
   const [source, setSource] = useState<string | null>("walk_in");
   const [buyerType, setBuyerType] = useState<string | null>(null);
-  const [propertyType, setPropertyType] = useState<string | null>(null);
-  const [bhk, setBhk] = useState<string | null>(null);
-  const [listingType, setListingType] = useState<string | null>(null);
+  const [propertyType, setPropertyType] = useState<string | null>(
+    initial?.property_type_interest ?? null,
+  );
+  const [bhk, setBhk] = useState<string | null>(
+    initial?.bhk ? String(Math.min(initial.bhk, 4)) : null,
+  );
+  const [listingType, setListingType] = useState<string | null>(
+    initial?.listing_type_interest ?? null,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [duplicates, setDuplicates] = useState<DuplicateCandidate[] | null>(null);

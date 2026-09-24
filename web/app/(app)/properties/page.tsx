@@ -3,6 +3,7 @@ import Link from "next/link";
 import { FilterBar } from "@/components/FilterBar";
 import { Pagination } from "@/components/Pagination";
 import { PlusIcon } from "@/components/icons";
+import { VoiceQuickAdd } from "@/components/voice/VoiceQuickAdd";
 import { RefreshInventory } from "@/components/RefreshInventory";
 import { Card, EmptyState, StatusPill, type Tone } from "@/components/ui";
 import { api, qs } from "@/lib/api";
@@ -73,6 +74,7 @@ export default async function PropertiesPage({
           {/* Inventory arrives on its own from the WhatsApp feed, so a screen
               left open falls behind with nothing on it saying so. */}
           <RefreshInventory newest={newest} />
+          {canAdd && user && <VoiceQuickAdd role={user.role} />}
           {canAdd && (
             <Link
               href="/properties/new"

@@ -7,6 +7,7 @@ import { ContactActions } from "@/components/ContactActions";
 import { LeadJourney } from "@/components/LeadJourney";
 import { MatchedInventory } from "@/components/MatchedInventory";
 import { ShowingsTimeline } from "@/components/ShowingsTimeline";
+import { CallRecordingUpload } from "@/components/voice/CallRecordingUpload";
 import {
   Card,
   InkCard,
@@ -200,6 +201,8 @@ export default async function ContactDetail({
           </div>
         )}
       </InkCard>
+
+      <CallRecordingUpload contactId={contact.id} />
 
       <div className="grid gap-5 [&>*]:min-w-0 lg:grid-cols-[1fr_360px]">
         <Card className="p-5">
