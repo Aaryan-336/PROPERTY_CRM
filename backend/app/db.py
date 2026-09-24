@@ -26,6 +26,7 @@ from app.models import (
     AuditLog,
     CallLog,
     Contact,
+    MetaAdConnection,
     Property,
     PropertyInterest,
     PropertySource,
@@ -71,6 +72,8 @@ GUARDED_MAPPERS = {
     WhatsAppGroup,
     WhatsAppGroupCandidate,
     WhatsAppMessage,
+    # Holds a user's encrypted Meta token: strictly the owning user's row.
+    MetaAdConnection,
 }
 GUARDED_TABLE_NAMES = {m.__tablename__ for m in GUARDED_MAPPERS}
 

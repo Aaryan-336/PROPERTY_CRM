@@ -55,6 +55,7 @@ _RESOURCE_ROUTES: tuple[tuple[str, str], ...] = (
     # Its trail is the whatsapp_messages table itself, which records every
     # message the gateway delivered.
     ("/whatsapp", "whatsapp_group"),
+    ("/meta-ads", "meta_ads"),
 )
 
 _ID_IN_PATH = re.compile(r"^/[^/]+/(\d+)")

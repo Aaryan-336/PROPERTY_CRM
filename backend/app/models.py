@@ -801,6 +801,61 @@ class PropertySource(Base):
     )
 
 
+# ---------------------------------------------------------------------------
+# Meta Ads (native campaign management)
+# ---------------------------------------------------------------------------
+
+META_CONNECTED = "connected"
+META_REAUTH_REQUIRED = "reauth_required"
+META_DISCONNECTED = "disconnected"
+# Row exists only because an OAuth round trip was started and not finished.
+META_PENDING = "pending"
+META_STATES = (META_CONNECTED, META_REAUTH_REQUIRED, META_DISCONNECTED, META_PENDING)
+
+
+class MetaAdConnection(Base):
+    """One CRM user's own Meta authorization. Never shared between users.
+
+    The token is Fernet ciphertext (``app/meta_crypto.py``); plaintext exists
+    only in memory for the duration of an outbound call and is never
+    serialized to any response. The OAuth ``state`` is stored as a SHA-256
+    hash so a database read cannot be used to complete someone else's flow.
+    """
+
+    __tablename__ = "meta_ad_connections"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id"), nullable=False, unique=True
+    )
+    status: Mapped[str] = mapped_column(Text, nullable=False, default=META_PENDING)
+    meta_user_id: Mapped[str | None] = mapped_column(Text)
+    meta_user_name: Mapped[str | None] = mapped_column(Text)
+    access_token_enc: Mapped[str | None] = mapped_column(Text)
+    token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    scopes: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
+    ad_account_id: Mapped[str | None] = mapped_column(Text)
+    ad_account_name: Mapped[str | None] = mapped_column(Text)
+    ad_account_currency: Mapped[str | None] = mapped_column(Text)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    oauth_state_hash: Mapped[str | None] = mapped_column(Text)
+    oauth_state_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    connected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index(
+            "idx_meta_oauth_state",
+            "oauth_state_hash",
+            postgresql_where=text("oauth_state_hash IS NOT NULL"),
+        ),
+    )
+
+
 # Name of the row the extraction loop keeps warm. A constant because two
 # processes write it and one reads it, and a typo would look exactly like a
 # worker that had stopped.

@@ -27,6 +27,7 @@ from app.models import (
     AuditLog,
     CallLog,
     Contact,
+    MetaAdConnection,
     Property,
     PropertyInterest,
     PropertySource,
@@ -207,6 +208,16 @@ class ScopedQuery:
         that tells them it is stale or distressed.
         """
         return _mark(select(PropertySource))
+
+    def meta_ad_connections(self) -> Select:
+        """The caller's own Meta connection only -- for every role, the Owner
+        included. A token authorizes spend on someone's personal Meta account;
+        firm-wide visibility does not extend to acting as them."""
+        return _mark(
+            select(MetaAdConnection).where(
+                MetaAdConnection.user_id == self.principal.id
+            )
+        )
 
     def users(self, *, include_deactivated: bool = False) -> Select:
         """Owner sees all staff; everyone else sees only themselves.

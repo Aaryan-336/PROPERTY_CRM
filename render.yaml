@@ -61,6 +61,20 @@ services:
       # queue rather than duplicate it.
       - key: EXTRACTION_IN_API
         value: "false"
+      # Meta Ads. META_REDIRECT_URI is https://<this API>/meta-ads/oauth/callback
+      # and must also be registered on the Meta app. The encryption key is
+      # generated once and must stay stable: rotating it without keeping the old
+      # key (comma-separated, new first) forces every user to reconnect.
+      - key: META_APP_ID
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      - key: META_REDIRECT_URI
+        sync: false
+      - key: META_TOKEN_ENCRYPTION_KEY
+        sync: false
+      - key: META_POST_CONNECT_REDIRECT
+        sync: false
       - key: SESSION_IDLE_DAYS
         value: "30"
       - key: SESSION_ABSOLUTE_DAYS

@@ -103,6 +103,47 @@ class Settings(BaseSettings):
     # where it can be restarted and scaled without bouncing the API.
     extraction_in_api: bool = False
 
+    # --- Meta Ads ---------------------------------------------------------
+    # The firm's Meta developer app (Ads MCP use case). Each CRM user still
+    # authorizes their *own* Meta account; these only identify the app.
+    meta_app_id: str = ""
+    meta_app_secret: str = ""
+    # Must be this API's public URL + /meta-ads/oauth/callback, and registered
+    # as a Valid OAuth Redirect URI on the Meta app.
+    meta_redirect_uri: str = ""
+    # Fernet key(s), comma-separated, newest first. Generate with:
+    #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # Empty disables Meta Ads entirely: no token is ever stored unencrypted.
+    meta_token_encryption_key: str = ""
+    # Where the browser lands after the OAuth round trip. Empty means the
+    # first CORS origin + /meta-ads.
+    meta_post_connect_redirect: str = ""
+    meta_scopes: str = "ads_mcp_management,ads_read,ads_management"
+    meta_graph_version: str = "v25.0"
+    meta_ads_mcp_url: str = "https://mcp.facebook.com/ads"
+    # auto: use the hosted Ads MCP where a matching tool is found, else the
+    # Graph Marketing API with the same user token. mcp | graph pin one.
+    meta_ads_transport: str = "auto"
+    # Optional JSON pinning our operations to MCP tool names, e.g.
+    # {"list_campaigns": "ads_get_campaigns"}. Discovery is used when unset.
+    meta_mcp_tools: str = ""
+
+    @property
+    def meta_ads_enabled(self) -> bool:
+        return bool(
+            self.meta_app_id
+            and self.meta_app_secret
+            and self.meta_redirect_uri
+            and self.meta_token_encryption_key
+        )
+
+    @property
+    def meta_redirect_after_connect(self) -> str:
+        if self.meta_post_connect_redirect:
+            return self.meta_post_connect_redirect
+        origins = self.cors_origin_list
+        return (origins[0] if origins else "http://localhost:3000") + "/meta-ads"
+
     @property
     def sqlalchemy_url(self) -> str:
         """Connection URL for the application role."""

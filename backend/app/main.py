@@ -24,6 +24,7 @@ from app.routers import (
     calls,
     contacts,
     lead_batches,
+    meta_ads,
     notifications,
     properties,
     showings,
@@ -199,5 +200,6 @@ for module in (
     notifications,
     whatsapp,
     lead_batches,
+    meta_ads,
 ):
     app.include_router(module.router)

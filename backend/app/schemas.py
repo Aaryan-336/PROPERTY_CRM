@@ -967,6 +967,92 @@ class PropertyReviewRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Meta Ads
+# ---------------------------------------------------------------------------
+
+
+class MetaAdsStatus(BaseModel):
+    configured: bool
+    state: Literal["connected", "disconnected", "reauth_required"]
+    meta_user_name: str | None = None
+    ad_account_id: str | None = None
+    ad_account_name: str | None = None
+    currency: str | None = None
+    token_expires_at: datetime | None = None
+    missing_scopes: list[str] = []
+    last_error: str | None = None
+    can_manage: bool = False
+
+
+class MetaAdAccountOut(BaseModel):
+    id: str
+    name: str
+    currency: str | None = None
+    account_status: int | None = None
+
+
+class MetaAdAccountSelect(BaseModel):
+    ad_account_id: str = Field(pattern=r"^act_\d{1,32}$")
+
+
+class MetaCampaignOut(BaseModel):
+    id: str
+    name: str
+    status: str
+    effective_status: str
+    objective: str | None = None
+    daily_budget: Decimal | None = Field(None, description="Major currency units.")
+    lifetime_budget: Decimal | None = None
+    budget_remaining: Decimal | None = None
+    start_time: str | None = None
+    stop_time: str | None = None
+
+
+class MetaCampaignList(BaseModel):
+    campaigns: list[MetaCampaignOut]
+    currency: str | None
+    via: str
+
+
+class MetaInsightRow(BaseModel):
+    campaign_id: str
+    campaign_name: str
+    spend: float
+    impressions: int
+    reach: int
+    clicks: int
+    ctr: float
+    cpc: float
+    cpm: float
+    leads: int
+
+
+class MetaInsights(BaseModel):
+    date_preset: str
+    currency: str | None
+    rows: list[MetaInsightRow]
+    totals: MetaInsightRow
+    via: str
+
+
+class MetaStatusChange(BaseModel):
+    status: Literal["ACTIVE", "PAUSED"]
+    confirm: bool = Field(
+        description="Must be true. The UI sets it only after the user confirms."
+    )
+
+
+class MetaBudgetChange(BaseModel):
+    daily_budget: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
+    confirm: bool
+
+
+class MetaWriteResult(BaseModel):
+    campaign: MetaCampaignOut
+    via: str
+
+
+# ---------------------------------------------------------------------------
 # Generic list envelope
 # ---------------------------------------------------------------------------
 

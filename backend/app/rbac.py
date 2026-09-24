@@ -53,6 +53,10 @@ CAPABILITIES: dict[str, frozenset[str]] = {
     # groups the firm sources from is competitive information, and the raw feed
     # carries counterparty numbers the firm never chose to publish.
     "whatsapp.manage": frozenset({ROLE_OWNER}),
+    # Ad spend is the firm's money. Connections are per user, so widening this
+    # to agents later only lets each agent manage their *own* Meta account.
+    "meta_ads.read": frozenset({ROLE_OWNER}),
+    "meta_ads.manage": frozenset({ROLE_OWNER}),
 }
 
 # Fields a Cold Caller may change on a contact. Per ROLES_PERMISSIONS.md they

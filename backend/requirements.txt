@@ -14,4 +14,5 @@ openpyxl==3.1.5
 pywebpush==2.0.3
 httpx==0.28.1
 groq==0.33.0
+cryptography==50.0.1
 pytest==8.3.4
