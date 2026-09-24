@@ -29,6 +29,45 @@ function toLocalInput(iso: string | null | undefined): string {
 }
 
 /**
+ * The mic button: a floating one bottom-right on the dashboard, an inline
+ * "Voice" pill in the Leads and Inventory headers.
+ */
+export function VoiceQuickAdd({
+  role,
+  variant = "button",
+}: {
+  role: Role;
+  variant?: "button" | "fab";
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      {variant === "fab" ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-label="Add by voice"
+          className="press tap fixed bottom-28 right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-sandstone text-white shadow-float lg:bottom-8 lg:right-8"
+        >
+          <MicIcon className="h-6 w-6" />
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-label="Add by voice"
+          className="press tap flex items-center gap-2 rounded-pill border border-hairline bg-card px-4 text-sm font-semibold text-ink"
+        >
+          <MicIcon className="h-4 w-4" />
+          <span className="hidden sm:inline">Voice</span>
+        </button>
+      )}
+      {open && <VoiceSheet role={role} open onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+/**
  * Speak a lead, listing, reminder or follow-up instead of typing it.
  *
  * Record → Whisper → a draft in the ordinary form. Nothing is saved until the
@@ -36,7 +75,6 @@ function toLocalInput(iso: string | null | undefined): string {
  * to the CRM on its own; lead and listing saves go through the same forms
  * (and the same duplicate checks) as typed ones.
  *
- * Opened from the mic in the centre of the dock (AppShell).
  */
 export function VoiceSheet({
   role,

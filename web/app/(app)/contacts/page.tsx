@@ -4,6 +4,7 @@ import { ContactRow } from "@/components/ContactRow";
 import { FilterBar } from "@/components/FilterBar";
 import { Pagination } from "@/components/Pagination";
 import { PlusIcon } from "@/components/icons";
+import { VoiceQuickAdd } from "@/components/voice/VoiceQuickAdd";
 import { Card, EmptyState, STAGE_TONE, StatusPill } from "@/components/ui";
 import { api, qs } from "@/lib/api";
 import { BUDGET_BANDS, splitBudgetBand } from "@/lib/budget";
@@ -104,6 +105,7 @@ export default async function ContactsPage({
               Export CSV
             </a>
           )}
+          {user && <VoiceQuickAdd role={user.role} />}
           <Link
             href="/contacts/new"
             className="tap flex items-center gap-2 rounded-pill bg-ink px-4 text-sm font-semibold text-white"
