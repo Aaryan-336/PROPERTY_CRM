@@ -103,6 +103,13 @@ class Settings(BaseSettings):
     # where it can be restarted and scaled without bouncing the API.
     extraction_in_api: bool = False
 
+    # Push each reminder at its due time from a loop inside the API.
+    reminders_in_api: bool = True
+    # Shared secret for POST /internal/reminders/dispatch, for an external
+    # scheduler (e.g. cron-job.org every minute) that also keeps a free-plan
+    # API awake. Empty disables the endpoint.
+    reminder_cron_secret: str = ""
+
     # Groq Whisper model for voice notes and call recordings.
     transcription_model: str = "whisper-large-v3-turbo"
 

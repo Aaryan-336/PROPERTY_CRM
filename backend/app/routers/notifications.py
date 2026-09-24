@@ -11,6 +11,7 @@ from app.config import settings
 from app.db import SCOPE_MARKER
 from app.deps import PrincipalDep, SessionDep
 from app.models import PushSubscription
+from app.push import send_to_users
 from app.schemas import PushConfig, PushSubscribeRequest
 
 router = APIRouter(tags=["notifications"])
@@ -69,3 +70,17 @@ def unsubscribe(
         sub.revoked_at = datetime.now(timezone.utc)
         db.commit()
     return {"ok": True}
+
+
+@router.post("/push/test")
+def push_test(principal: PrincipalDep, db: SessionDep) -> dict:
+    """Send the caller a test notification, to every device they enabled."""
+    sent = send_to_users(
+        db,
+        [principal.id],
+        title="Notifications are on",
+        body="Reminders will arrive here at the time you set.",
+        url="/reminders",
+        tag="push-test",
+    )
+    return {"sent": sent, "enabled": settings.push_enabled}

@@ -3,7 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { Field, inputClass } from "@/components/forms";
 import { UploadIcon } from "@/components/icons";
+import { DateTimeField, fromLocalInput, toLocalInput } from "@/components/reminders/DateTimeField";
 import { ChipGroup } from "@/components/Sheet";
 import { Card, SectionHeading } from "@/components/ui";
 import type { CallRecordingDraft } from "@/lib/types";
@@ -17,13 +19,6 @@ const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 type Outcome = CallRecordingDraft["outcome"];
 type Temperature = NonNullable<CallRecordingDraft["temperature"]>;
-
-function toLocalInput(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
-}
 
 /**
  * Upload a recording of a call (from the phone's recorder or call-recording
@@ -91,7 +86,7 @@ export function CallRecordingUpload({ contactId }: { contactId: number }) {
         outcome,
         temperature,
         notes: notes.trim() || null,
-        follow_up_at: followUp ? new Date(followUp).toISOString() : null,
+        follow_up_at: fromLocalInput(followUp),
         transcript: draft.transcript,
       }),
     }).catch(() => null);
@@ -147,24 +142,18 @@ export function CallRecordingUpload({ contactId }: { contactId: number }) {
         <div className="space-y-4">
           <ChipGroup label="Outcome" options={CALL_OUTCOMES} value={outcome} onChange={(v) => v && setOutcome(v)} columns={3} />
           <ChipGroup label="Temperature" options={TEMPERATURES} value={temperature} onChange={setTemperature} columns={3} allowClear />
-          <label className="block">
-            <span className="mb-1.5 block text-xs font-semibold text-slate">Remark</span>
+          <Field label="Remark">
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={5}
-              className="w-full rounded-tile border border-hairline bg-card px-4 py-3 text-[16px] text-ink outline-none focus:border-ink"
+              className={`${inputClass} resize-y py-3 leading-relaxed`}
             />
-          </label>
-          <label className="block">
+          </Field>
+          <div>
             <span className="mb-1.5 block text-xs font-semibold text-slate">Follow up</span>
-            <input
-              type="datetime-local"
-              value={followUp}
-              onChange={(e) => setFollowUp(e.target.value)}
-              className="tap w-full rounded-tile border border-hairline bg-card px-4 text-[16px] text-ink outline-none focus:border-ink"
-            />
-          </label>
+            <DateTimeField value={followUp} onChange={setFollowUp} />
+          </div>
           <div className="rounded-tile bg-parchment-deep px-3.5 py-3">
             <button type="button" onClick={() => setShowTranscript((v) => !v)} className="text-xs font-semibold text-slate">
               {showTranscript ? "Hide" : "Show"} full transcript
@@ -178,7 +167,7 @@ export function CallRecordingUpload({ contactId }: { contactId: number }) {
               type="button"
               onClick={save}
               disabled={busy}
-              className="press tap flex-1 rounded-pill bg-ink px-5 text-sm font-semibold text-white disabled:opacity-60"
+              className="press tap flex-1 rounded-pill bg-sandstone px-5 text-[15px] font-semibold text-white disabled:opacity-50"
             >
               {busy ? "Saving…" : "Save to call log"}
             </button>

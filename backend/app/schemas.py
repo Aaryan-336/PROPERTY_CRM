@@ -764,8 +764,9 @@ class FeedItem(BaseModel):
 
 class TaskCreateRequest(BaseModel):
     contact_id: int | None = None
-    title: str
+    title: str = Field(min_length=1, max_length=500)
     due_at: datetime | None = None
+    priority: Literal["low", "normal", "high"] = "normal"
 
 
 class TaskOut(BaseModel):
@@ -780,6 +781,8 @@ class TaskOut(BaseModel):
     due_at: datetime | None = None
     status: str
     source_call_log_id: int | None = None
+    priority: str = "normal"
+    notified_at: datetime | None = None
     created_at: datetime
     completed_at: datetime | None = None
 
@@ -787,7 +790,8 @@ class TaskOut(BaseModel):
 class TaskUpdateRequest(BaseModel):
     status: Literal["pending", "done", "cancelled"] | None = None
     due_at: datetime | None = None
-    title: str | None = None
+    title: str | None = Field(default=None, min_length=1, max_length=500)
+    priority: Literal["low", "normal", "high"] | None = None
 
 
 # ---------------------------------------------------------------------------

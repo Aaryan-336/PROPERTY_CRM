@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
 import {
+  BellIcon,
   BuildingIcon,
   ChevronRight,
   FeedIcon,
@@ -45,6 +46,7 @@ const NAV: NavItem[] = [
   { href: "/contacts", label: "Leads", icon: PeopleIcon, roles: ["owner", "agent"] },
   { href: "/properties", label: "Inventory", icon: BuildingIcon, roles: ["owner", "agent"] },
   { href: "/showings", label: "Showings", icon: RouteIcon, roles: ["owner", "agent"] },
+  { href: "/reminders", label: "Reminders", icon: BellIcon, roles: ["owner", "agent", "cold_caller"] },
   { href: "/feed", label: "Activity", icon: PulseIcon, roles: ["owner"] },
   { href: "/escalations", label: "Escalations", icon: FlagIcon, roles: ["owner"] },
   { href: "/inventory-feed", label: "Inventory feed", icon: FeedIcon, roles: ["owner"] },
@@ -71,7 +73,7 @@ const MOBILE_LIMIT: Record<Role, string[]> = {
   // A caller's whole job is the queue, and they have no access to the lead
   // book or the inventory — the API refuses both for this role, so putting
   // them on the pill would only produce dead links.
-  cold_caller: ["/", "/queue", "/my-calls"],
+  cold_caller: ["/", "/queue", "/my-calls", "/reminders"],
   manager: ["/", "/contacts", "/properties"],
 };
 

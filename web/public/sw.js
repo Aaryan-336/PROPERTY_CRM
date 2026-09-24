@@ -149,6 +149,9 @@ self.addEventListener("push", (event) => {
       icon: "/icons/icon-192.png",
       badge: "/icons/icon-192.png",
       tag: payload.tag || undefined,
+      // High-importance reminders stay until dismissed instead of timing out.
+      requireInteraction: Boolean(payload.requireInteraction),
+      renotify: Boolean(payload.tag),
       data: { url: payload.url || "/" },
       vibrate: [40, 30, 40],
     }),

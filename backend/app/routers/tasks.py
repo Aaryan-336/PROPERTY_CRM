@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import hmac
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Header, Query, Request
 from sqlalchemy import func, select
+from starlette.concurrency import run_in_threadpool
+
+from app import reminders
+from app.config import settings
 
 from app.deps import (
     PageDep,
@@ -14,7 +19,7 @@ from app.deps import (
     SessionDep,
     rate_limit_lists,
 )
-from app.errors import not_found
+from app.errors import ApiError, forbidden, not_found
 from app.models import Contact, Task
 from app.schemas import Paged, TaskCreateRequest, TaskOut, TaskUpdateRequest
 from app.serializers import user_names
@@ -53,11 +58,21 @@ def list_tasks(
     scoped: ScopedDep,
     db: SessionDep,
     page: PageDep,
+    principal: PrincipalDep,
     status: str | None = Query(default="pending"),
     contact_id: int | None = None,
     overdue_only: bool = False,
+    mine: bool = Query(
+        default=False,
+        description="Only reminders assigned to the caller (the Owner otherwise sees the firm's).",
+    ),
+    priority: str | None = None,
 ) -> Paged[TaskOut]:
     stmt = scoped.tasks()
+    if mine:
+        stmt = stmt.where(Task.assigned_to == principal.id)
+    if priority:
+        stmt = stmt.where(Task.priority == priority)
     if status:
         stmt = stmt.where(Task.status == status)
     if contact_id is not None:
@@ -103,8 +118,9 @@ def create_task(
         contact_id=payload.contact_id,
         assigned_to=principal.id,
         created_by=principal.id,
-        title=payload.title,
+        title=payload.title.strip(),
         due_at=payload.due_at,
+        priority=payload.priority,
         status="pending",
     )
     db.add(task)
@@ -131,9 +147,24 @@ def update_task(
     before = {k: getattr(task, k) for k in fields}
     for key, value in fields.items():
         setattr(task, key, value)
+    # A moved reminder fires again at its new time.
+    if "due_at" in fields and before.get("due_at") != fields["due_at"]:
+        task.notified_at = None
     if fields.get("status") == "done" and task.completed_at is None:
         task.completed_at = datetime.now(timezone.utc)
     db.commit()
 
     request.state.audit.record_changes(before, fields)
     return _serialize(db, scoped, [task])[0]
+
+
+@router.post("/internal/reminders/dispatch", include_in_schema=False)
+async def dispatch_reminders(x_cron_secret: str | None = Header(default=None)) -> dict:
+    """For an external scheduler. Fails closed when no secret is configured."""
+    if not settings.reminder_cron_secret:
+        raise ApiError(503, "not_configured", "REMINDER_CRON_SECRET is not set.")
+    if not x_cron_secret or not hmac.compare_digest(
+        x_cron_secret, settings.reminder_cron_secret
+    ):
+        raise forbidden("Bad scheduler secret.")
+    return await run_in_threadpool(reminders.dispatch_due)

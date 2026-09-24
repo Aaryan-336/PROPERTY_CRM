@@ -6,7 +6,10 @@ import { useState } from "react";
 import { MicIcon } from "@/components/icons";
 import { NewContactForm } from "@/components/NewContactForm";
 import { NewPropertyForm } from "@/components/NewPropertyForm";
+import { Field, inputClass, primaryButtonClass } from "@/components/forms";
+import { ReminderForm } from "@/components/reminders/ReminderForm";
 import { ChipGroup, Sheet } from "@/components/Sheet";
+import { Card } from "@/components/ui";
 import type { Role, VoiceDraft, VoiceIntent } from "@/lib/types";
 
 import { UPLOAD_TIMEOUT_MS, explainFailure } from "./errors";
@@ -18,15 +21,6 @@ const INTENT_OPTIONS: { value: VoiceIntent; label: string; roles: Role[] }[] = [
   { value: "add_inventory", label: "Listing", roles: ["owner", "agent"] },
   { value: "log_follow_up", label: "Follow-up", roles: ["owner", "agent"] },
 ];
-
-/** `datetime-local` wants local wall time with no zone. */
-function toLocalInput(iso: string | null | undefined): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const off = d.getTimezoneOffset() * 60_000;
-  return new Date(d.getTime() - off).toISOString().slice(0, 16);
-}
 
 /**
  * The mic button: a floating one bottom-right on the dashboard, an inline
@@ -230,7 +224,7 @@ export function VoiceSheet({
               options={INTENT_OPTIONS.filter((o) => o.roles.includes(role))}
               value={intent}
               onChange={setIntent}
-              columns={role === "cold_caller" ? 2 : 4}
+              columns={2}
             />
 
             {intent === "add_lead" && (
@@ -243,9 +237,9 @@ export function VoiceSheet({
             )}
             {intent === "set_reminder" && (
               <ReminderForm
-                title={draft.reminder?.title ?? draft.transcript.slice(0, 120)}
-                dueAt={draft.reminder?.due_at ?? null}
-                onDone={close}
+                initialTitle={draft.reminder?.title ?? draft.transcript.slice(0, 120)}
+                initialDueAt={draft.reminder?.due_at ?? null}
+                onSaved={close}
               />
             )}
             {intent === "log_follow_up" && (
@@ -270,75 +264,6 @@ export function VoiceSheet({
         )}
       </Sheet>
     </>
-  );
-}
-
-const inputClass =
-  "tap w-full rounded-tile border border-hairline bg-card px-4 text-[16px] text-ink outline-none focus:border-ink";
-
-function ReminderForm({
-  title: initialTitle,
-  dueAt,
-  onDone,
-}: {
-  title: string;
-  dueAt: string | null;
-  onDone: () => void;
-}) {
-  const router = useRouter();
-  const [title, setTitle] = useState(initialTitle);
-  const [due, setDue] = useState(toLocalInput(dueAt));
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-
-  async function save() {
-    if (!title.trim()) {
-      setError("Give the reminder a title.");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    const res = await fetch("/api/crm/tasks", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        title: title.trim(),
-        due_at: due ? new Date(due).toISOString() : null,
-      }),
-    }).catch(() => null);
-    setBusy(false);
-    if (!res?.ok) {
-      setError("Could not save the reminder. Try again.");
-      return;
-    }
-    setSaved(true);
-    router.refresh();
-    setTimeout(onDone, 900);
-  }
-
-  if (saved) return <p className="rounded-tile bg-teal-soft px-3.5 py-3 text-sm font-semibold text-teal">Reminder saved.</p>;
-
-  return (
-    <div className="space-y-3">
-      <label className="block">
-        <span className="mb-1.5 block text-xs font-semibold text-slate">Remind me to</span>
-        <input value={title} onChange={(e) => setTitle(e.target.value)} className={inputClass} />
-      </label>
-      <label className="block">
-        <span className="mb-1.5 block text-xs font-semibold text-slate">When</span>
-        <input type="datetime-local" value={due} onChange={(e) => setDue(e.target.value)} className={inputClass} />
-      </label>
-      {error && <p className="text-xs font-semibold text-signal">{error}</p>}
-      <button
-        type="button"
-        onClick={save}
-        disabled={busy}
-        className="press tap w-full rounded-pill bg-ink px-5 text-sm font-semibold text-white disabled:opacity-60"
-      >
-        {busy ? "Saving…" : "Save reminder"}
-      </button>
-    </div>
   );
 }
 
@@ -393,63 +318,96 @@ function FollowUpForm({
     setTimeout(onDone, 900);
   }
 
-  if (saved) return <p className="rounded-tile bg-teal-soft px-3.5 py-3 text-sm font-semibold text-teal">Follow-up logged.</p>;
+  if (saved) {
+    return (
+      <p className="rounded-tile bg-teal-soft px-4 py-3 text-sm font-semibold text-teal">
+        Follow-up logged.
+      </p>
+    );
+  }
 
   return (
-    <div className="space-y-3">
-      {picked ? (
-        <p className="flex items-center justify-between rounded-tile border border-hairline bg-card px-4 py-3 text-sm">
-          <span className="font-semibold text-ink">
-            {picked.first_name} {picked.last_name ?? ""}
-          </span>
-          <button type="button" onClick={() => setPicked(null)} className="text-xs font-semibold text-sandstone">
-            Change
-          </button>
-        </p>
-      ) : (
-        <div>
-          <span className="mb-1.5 block text-xs font-semibold text-slate">Which lead?</span>
-          <div className="flex gap-2">
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && search()}
-              placeholder="Name or phone"
-              className={inputClass}
-            />
-            <button type="button" onClick={search} className="tap rounded-pill bg-ink px-4 text-sm font-semibold text-white">
-              Find
-            </button>
+    <div className="space-y-5">
+      <Card className="space-y-4 p-5">
+        {picked ? (
+          <div>
+            <span className="mb-1.5 block text-xs font-semibold text-slate">Lead</span>
+            <p className="flex min-h-[44px] items-center justify-between rounded-tile border border-hairline bg-parchment px-4 text-sm">
+              <span className="font-semibold text-ink">
+                {picked.first_name} {picked.last_name ?? ""}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPicked(null)}
+                className="text-xs font-semibold text-sandstone-deep"
+              >
+                Change
+              </button>
+            </p>
           </div>
-          {hits && (
-            <ul className="mt-2 space-y-1.5">
-              {hits.length === 0 && <li className="text-xs text-slate">No matching lead in your book.</li>}
-              {hits.map((h) => (
-                <li key={h.id}>
-                  <button
-                    type="button"
-                    onClick={() => setPicked(h)}
-                    className="tap w-full rounded-tile border border-hairline bg-card px-4 text-left text-sm font-semibold text-ink"
-                  >
-                    {h.first_name} {h.last_name ?? ""}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        ) : (
+          <div>
+            <span className="mb-1.5 block text-xs font-semibold text-slate">
+              Which lead?<span className="text-signal"> *</span>
+            </span>
+            <div className="flex gap-2">
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void search();
+                  }
+                }}
+                placeholder="Name or phone"
+                className={inputClass}
+              />
+              <button
+                type="button"
+                onClick={search}
+                className="press tap shrink-0 rounded-pill border border-hairline bg-card px-4 text-sm font-semibold text-ink"
+              >
+                Find
+              </button>
+            </div>
+            {hits && (
+              <ul className="mt-2 space-y-1.5">
+                {hits.length === 0 && (
+                  <li className="text-xs text-slate">No matching lead in your book.</li>
+                )}
+                {hits.map((h) => (
+                  <li key={h.id}>
+                    <button
+                      type="button"
+                      onClick={() => setPicked(h)}
+                      className="press-soft tap w-full rounded-tile border border-hairline bg-parchment px-4 text-left text-sm font-semibold text-ink"
+                    >
+                      {h.first_name} {h.last_name ?? ""}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+        <Field label="What happened">
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={4}
+            className={`${inputClass} resize-y py-3 leading-relaxed`}
+          />
+        </Field>
+      </Card>
+
+      {error && (
+        <p role="alert" className="rounded-tile bg-signal-soft px-4 py-3 text-sm text-signal">
+          {error}
+        </p>
       )}
-      <label className="block">
-        <span className="mb-1.5 block text-xs font-semibold text-slate">What happened</span>
-        <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={4} className={`${inputClass} py-3`} />
-      </label>
-      {error && <p className="text-xs font-semibold text-signal">{error}</p>}
-      <button
-        type="button"
-        onClick={save}
-        disabled={busy}
-        className="press tap w-full rounded-pill bg-ink px-5 text-sm font-semibold text-white disabled:opacity-60"
-      >
+
+      <button type="button" onClick={save} disabled={busy} className={primaryButtonClass}>
         {busy ? "Saving…" : "Log follow-up"}
       </button>
     </div>

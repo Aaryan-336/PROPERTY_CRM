@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { QueueCard } from "@/components/QueueCard";
+import { RemindersHighlight } from "@/components/reminders/RemindersHighlight";
 import { ChevronRight } from "@/components/icons";
 import { Card, EmptyState, InkCard, MetricTile, SectionHeading } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -44,6 +45,8 @@ export async function ColdCallerHome({ user }: { user: User }) {
           />
         </div>
       </InkCard>
+
+      <RemindersHighlight hideWhenEmpty />
 
       {next ? (
         <>

@@ -63,7 +63,7 @@ export function ServiceWorker() {
   return null;
 }
 
-async function subscribeToPush(registration: ServiceWorkerRegistration) {
+export async function subscribeToPush(registration: ServiceWorkerRegistration) {
   if (!("PushManager" in window) || Notification.permission === "denied") return;
 
   const configRes = await fetch("/api/crm/push/config");

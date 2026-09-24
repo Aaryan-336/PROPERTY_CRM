@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { ContactRow } from "@/components/ContactRow";
+import { RemindersHighlight } from "@/components/reminders/RemindersHighlight";
 import { ChevronRight, PlusIcon } from "@/components/icons";
 import {
   Card,
@@ -8,7 +9,6 @@ import {
   InkCard,
   MetricTile,
   SectionHeading,
-  StatusPill,
 } from "@/components/ui";
 import { api } from "@/lib/api";
 import { money, relativeTime } from "@/lib/format";
@@ -28,9 +28,6 @@ export async function AgentHome({ user }: { user: User }) {
   const now = Date.now();
   const overdue = tasks.items.filter(
     (t) => t.due_at && new Date(t.due_at).getTime() <= now,
-  );
-  const upcoming = tasks.items.filter(
-    (t) => !t.due_at || new Date(t.due_at).getTime() > now,
   );
 
   const scheduled = leads.items.filter(
@@ -66,35 +63,7 @@ export async function AgentHome({ user }: { user: User }) {
         </div>
       </InkCard>
 
-      {overdue.length > 0 && (
-        <Card className="border-signal/40 p-5">
-          <SectionHeading
-            title="Overdue follow-ups"
-            hint="You promised these already"
-            action={<StatusPill label={`${overdue.length}`} tone="signal" />}
-          />
-          <ul className="space-y-2">
-            {overdue.slice(0, 4).map((task) => (
-              <li key={task.id}>
-                <Link
-                  href={`/contacts/${task.contact_id}`}
-                  className="flex items-center justify-between gap-3 rounded-tile bg-signal-soft px-3.5 py-3"
-                >
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-semibold text-ink">
-                      {task.title}
-                    </span>
-                    <span className="tabular block text-xs text-signal">
-                      due {relativeTime(task.due_at)}
-                    </span>
-                  </span>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-signal" />
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
+      <RemindersHighlight />
 
       <div className="grid gap-5 [&>*]:min-w-0 lg:grid-cols-[1fr_360px]">
         <Card className="p-5">
@@ -157,27 +126,6 @@ export async function AgentHome({ user }: { user: User }) {
               </ul>
             )}
           </Card>
-
-          {upcoming.length > 0 && (
-            <Card className="p-5">
-              <SectionHeading title="Coming up" hint="Scheduled follow-ups" />
-              <ul className="space-y-2">
-                {upcoming.slice(0, 4).map((task) => (
-                  <li
-                    key={task.id}
-                    className="flex items-center justify-between gap-3 rounded-tile bg-parchment px-3.5 py-2.5"
-                  >
-                    <span className="min-w-0 truncate text-sm text-ink">
-                      {task.title}
-                    </span>
-                    <span className="tabular shrink-0 text-xs text-slate">
-                      {relativeTime(task.due_at)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          )}
 
           <Card className="p-5">
             <SectionHeading

@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { RemindersHighlight } from "@/components/reminders/RemindersHighlight";
+
 import { FeedStream } from "@/components/FeedStream";
 import { ShowingsTimeline } from "@/components/ShowingsTimeline";
 import { ChevronRight } from "@/components/icons";
@@ -80,6 +82,8 @@ export async function OwnerHome({ user }: { user: User }) {
           <MetricTile label="Live activity" value={feed.length} sub="last 7 days" ink />
         </div>
       </InkCard>
+
+      <RemindersHighlight />
 
       {/* Desktop earns its keep here: three panels side by side instead of the
           stacked mobile view — a command centre, not a scaled-up phone. */}

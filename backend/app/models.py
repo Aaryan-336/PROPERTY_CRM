@@ -624,6 +624,9 @@ class Session(Base):
     )
 
 
+TASK_PRIORITIES = ("low", "normal", "high")
+
+
 class Task(Base):
     """Follow-up reminder. Auto-created on qualifying call outcomes."""
 
@@ -645,12 +648,25 @@ class Task(Base):
     source_call_log_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("call_logs.id")
     )
+    # 'low' | 'normal' | 'high'. High reminders stay on screen until dismissed.
+    priority: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default="normal", default="normal"
+    )
+    # When the due-time push went out. Null = not yet; cleared when due_at moves.
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    __table_args__ = (Index("idx_tasks_assignee_due", "assigned_to", "status", "due_at"),)
+    __table_args__ = (
+        Index("idx_tasks_assignee_due", "assigned_to", "status", "due_at"),
+        Index(
+            "idx_tasks_reminder_queue",
+            "due_at",
+            postgresql_where=text("status = 'pending' AND notified_at IS NULL"),
+        ),
+    )
 
 
 class PushSubscription(Base):

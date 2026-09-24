@@ -65,6 +65,17 @@ services:
       # and must also be registered on the Meta app. The encryption key is
       # generated once and must stay stable: rotating it without keeping the old
       # key (comma-separated, new first) forces every user to reconnect.
+      # Web Push, for reminders and escalations. Generate once with
+      # `python -m app.tools.vapid_keygen`; without them nothing is pushed.
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      # For an external every-minute scheduler hitting
+      # POST /internal/reminders/dispatch (header X-Cron-Secret). The free plan
+      # sleeps after 15 idle minutes; the ping keeps reminders on time.
+      - key: REMINDER_CRON_SECRET
+        generateValue: true
       - key: META_APP_ID
         sync: false
       - key: META_APP_SECRET

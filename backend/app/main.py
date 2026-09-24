@@ -16,6 +16,7 @@ from app.config import settings
 from app.db import UnscopedQueryError
 from app.extraction import Extractor
 from app.ingestion import BATCH_SIZE
+from app import reminders
 from app.workers.whatsapp import request_worker_shutdown, run_forever
 from app.routers import (
     activities,
@@ -76,8 +77,12 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             thread.start()
             log.info("extraction worker started inside the API process")
 
+    if settings.reminders_in_api:
+        reminders.start_background()
+
     yield
 
+    reminders.request_shutdown()
     if thread is not None:
         # Signals the shared loop to stop at its next batch boundary. Not
         # joined: it is a daemon, and a batch mid-flight is safe to abandon

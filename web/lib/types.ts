@@ -311,9 +311,19 @@ export type Task = {
   due_at: string | null;
   status: string;
   source_call_log_id: number | null;
+  priority: ReminderPriority;
+  notified_at: string | null;
   created_at: string;
   completed_at: string | null;
 };
+
+export type ReminderPriority = "low" | "normal" | "high";
+
+export const REMINDER_PRIORITIES = [
+  { value: "low", label: "Low" },
+  { value: "normal", label: "Normal" },
+  { value: "high", label: "High" },
+] as const;
 
 export type AuditEntry = {
   id: number;

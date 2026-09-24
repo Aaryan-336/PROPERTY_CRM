@@ -34,6 +34,7 @@ def send_to_users(
     body: str,
     url: str = "/",
     tag: str | None = None,
+    require_interaction: bool = False,
 ) -> int:
     ids = [u for u in user_ids if u]
     if not ids or not settings.push_enabled:
@@ -58,7 +59,15 @@ def send_to_users(
         .all()
     )
 
-    payload = json.dumps({"title": title, "body": body, "url": url, "tag": tag})
+    payload = json.dumps(
+        {
+            "title": title,
+            "body": body,
+            "url": url,
+            "tag": tag,
+            "requireInteraction": require_interaction,
+        }
+    )
     sent = 0
     for sub in subs:
         try:
