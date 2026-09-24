@@ -9,6 +9,7 @@ import { NewPropertyForm } from "@/components/NewPropertyForm";
 import { ChipGroup, Sheet } from "@/components/Sheet";
 import type { Role, VoiceDraft, VoiceIntent } from "@/lib/types";
 
+import { UPLOAD_TIMEOUT_MS, explainFailure } from "./errors";
 import { type Recording, useRecorder } from "./useRecorder";
 
 const INTENT_OPTIONS: { value: VoiceIntent; label: string; roles: Role[] }[] = [
@@ -34,15 +35,18 @@ function toLocalInput(iso: string | null | undefined): string {
  * person has read it and pressed that form's own Save, so the AI never writes
  * to the CRM on its own; lead and listing saves go through the same forms
  * (and the same duplicate checks) as typed ones.
+ *
+ * Opened from the mic in the centre of the dock (AppShell).
  */
-export function VoiceQuickAdd({
+export function VoiceSheet({
   role,
-  variant = "button",
+  open,
+  onClose,
 }: {
   role: Role;
-  variant?: "button" | "fab";
+  open: boolean;
+  onClose: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [phase, setPhase] = useState<"record" | "working" | "review">("record");
   const [draft, setDraft] = useState<VoiceDraft | null>(null);
   const [intent, setIntent] = useState<VoiceIntent | null>(null);
@@ -55,12 +59,14 @@ export function VoiceQuickAdd({
     const form = new FormData();
     if (rec instanceof File) form.append("audio", rec, rec.name);
     else form.append("audio", rec.blob, rec.filename);
-    const res = await fetch("/api/crm/voice/quick-add", { method: "POST", body: form }).catch(
-      () => null,
-    );
+    const res = await fetch("/api/crm/voice/quick-add", {
+      method: "POST",
+      body: form,
+      signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+    }).catch(() => null);
     const body = res ? await res.json().catch(() => null) : null;
     if (!res?.ok || !body) {
-      setError(body?.error?.message ?? "Could not process the recording. Try again.");
+      setError(explainFailure(res, body, "Voice", "Could not process the recording. Try again."));
       setPhase("record");
       return;
     }
@@ -83,35 +89,12 @@ export function VoiceQuickAdd({
 
   function close() {
     if (recorder.state === "recording") recorder.stop();
-    setOpen(false);
+    onClose();
     reset();
   }
 
-  const trigger =
-    variant === "fab" ? (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        aria-label="Add by voice"
-        className="press tap fixed bottom-28 right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-sandstone text-white shadow-float lg:bottom-8 lg:right-8"
-      >
-        <MicIcon className="h-6 w-6" />
-      </button>
-    ) : (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        aria-label="Add by voice"
-        className="press tap flex items-center gap-2 rounded-pill border border-hairline bg-card px-4 text-sm font-semibold text-ink"
-      >
-        <MicIcon className="h-4 w-4" />
-        <span className="hidden sm:inline">Voice</span>
-      </button>
-    );
-
   return (
     <>
-      {trigger}
       <Sheet
         open={open}
         onClose={close}
@@ -122,24 +105,40 @@ export function VoiceQuickAdd({
           <div className="flex flex-col items-center py-4 text-center">
             {recorder.supported ? (
               <>
-                <button
-                  type="button"
-                  onClick={recorder.state === "recording" ? recorder.stop : recorder.start}
-                  aria-label={recorder.state === "recording" ? "Stop recording" : "Start recording"}
-                  className={`press flex h-24 w-24 items-center justify-center rounded-full text-white shadow-float ${
-                    recorder.state === "recording" ? "animate-pulse bg-signal" : "bg-ink"
-                  }`}
-                >
-                  {recorder.state === "recording" ? (
-                    <span className="h-7 w-7 rounded-md bg-white" />
-                  ) : (
-                    <MicIcon className="h-10 w-10" />
+                <div className="relative flex h-32 w-32 items-center justify-center">
+                  {recorder.state === "recording" && (
+                    <span
+                      aria-hidden
+                      className="absolute inset-0 rounded-full bg-sandstone/25 transition-transform duration-75"
+                      style={{ transform: `scale(${0.72 + recorder.level * 0.5})` }}
+                    />
                   )}
-                </button>
-                <p className="tabular mt-3 text-sm text-slate">
+                  <button
+                    type="button"
+                    onClick={recorder.state === "recording" ? recorder.stop : recorder.start}
+                    aria-label={recorder.state === "recording" ? "Stop recording" : "Start recording"}
+                    className={`press relative flex h-24 w-24 items-center justify-center rounded-full text-white shadow-float ${
+                      recorder.state === "recording" ? "bg-sandstone" : "bg-ink"
+                    }`}
+                  >
+                    {recorder.state === "recording" ? (
+                      <span className="h-7 w-7 rounded-md bg-white" />
+                    ) : (
+                      <MicIcon className="h-10 w-10" />
+                    )}
+                  </button>
+                </div>
+                <p className="mt-2 text-sm font-semibold text-ink" aria-live="polite">
+                  {recorder.state !== "recording"
+                    ? "Tap the mic and speak"
+                    : recorder.heard
+                      ? `Listening… ${recorder.seconds}s`
+                      : "Listening — start speaking"}
+                </p>
+                <p className="mt-1 text-xs text-slate">
                   {recorder.state === "recording"
-                    ? `Recording… ${recorder.seconds}s — tap to finish`
-                    : "Tap to start"}
+                    ? "Pause for two seconds or tap stop when you're done."
+                    : "It stops by itself when you pause."}
                 </p>
                 <p className="mt-4 max-w-xs text-xs text-slate">
                   e.g. &ldquo;New client Rahul, 98200 12345, wants a 2 BHK in Powai to buy,
@@ -168,7 +167,8 @@ export function VoiceQuickAdd({
         {phase === "working" && (
           <div className="py-10 text-center">
             <div className="skeleton mx-auto h-2 w-40 rounded-full" />
-            <p className="mt-3 text-sm text-slate">Listening back and filling in the details…</p>
+            <p className="mt-3 text-sm text-slate">Transcribing and filling in the details…</p>
+            <p className="mt-1 text-xs text-slate">Usually a few seconds; longer if the server was asleep.</p>
           </div>
         )}
 

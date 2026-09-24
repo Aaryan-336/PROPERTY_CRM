@@ -31,13 +31,13 @@ function statusTone(status: string): Tone {
   return "signal";
 }
 
-type Attempt<T> = { data?: T; error?: string };
+type Attempt<T> = { data?: T; error?: string; status?: number };
 
 async function attempt<T>(fn: () => Promise<T>): Promise<Attempt<T>> {
   try {
     return { data: await fn() };
   } catch (err) {
-    if (err instanceof ApiRequestError) return { error: err.message };
+    if (err instanceof ApiRequestError) return { error: err.message, status: err.status };
     throw err;
   }
 }
@@ -58,7 +58,32 @@ export default async function MetaAdsPage({
   const params = await searchParams;
   const range = RANGES.some(([k]) => k === params.range) ? params.range! : "last_7d";
 
-  const status = await api<MetaAdsStatus>("/meta-ads/status");
+  // Never let this screen crash: if the API is older than this frontend (the
+  // route 404s) or asleep, say so and what to do, instead of an error page.
+  const statusResult = await attempt(() => api<MetaAdsStatus>("/meta-ads/status"));
+  if (!statusResult.data) {
+    const notDeployed = statusResult.status === 404;
+    return (
+      <Card className="p-5">
+        <SectionHeading
+          title="Meta Ads"
+          action={<StatusPill label="Unavailable" tone="warning" />}
+        />
+        <p className="text-sm text-slate">
+          {notDeployed
+            ? "The API server is running an older version without Meta Ads. Redeploy the backend with this update — it adds the Meta Ads endpoints and runs its database migration on start."
+            : `Couldn't load Meta Ads right now: ${statusResult.error}`}
+        </p>
+        <Link
+          href="/meta-ads"
+          className="press tap mt-4 inline-flex items-center rounded-pill border border-hairline bg-card px-4 text-sm font-semibold text-ink"
+        >
+          Try again
+        </Link>
+      </Card>
+    );
+  }
+  const status = statusResult.data;
   const live = status.state === "connected";
 
   const none = Promise.resolve({});
@@ -79,7 +104,9 @@ export default async function MetaAdsPage({
   // A call may have just discovered the token is dead; re-read so the card
   // says "Reconnect required" on this very render instead of the next one.
   const freshStatus =
-    live && (campaigns.error || insights.error) ? await api<MetaAdsStatus>("/meta-ads/status") : status;
+    live && (campaigns.error || insights.error)
+      ? ((await attempt(() => api<MetaAdsStatus>("/meta-ads/status"))).data ?? status)
+      : status;
 
   const currency = status.currency;
   const byCampaign = new Map<string, MetaInsightRow>(

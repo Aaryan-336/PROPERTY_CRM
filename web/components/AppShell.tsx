@@ -14,6 +14,7 @@ import {
   KeyIcon,
   LogoutIcon,
   MegaphoneIcon,
+  MicIcon,
   MoreIcon,
   PeopleIcon,
   PhoneIcon,
@@ -26,6 +27,7 @@ import {
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { Sheet } from "@/components/Sheet";
 import { Avatar } from "@/components/ui";
+import { VoiceSheet } from "@/components/voice/VoiceQuickAdd";
 import { roleLabel } from "@/lib/format";
 import type { Role, User } from "@/lib/types";
 
@@ -132,6 +134,7 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
   const router = useRouter();
 
   const [moreOpen, setMoreOpen] = useState(false);
+  const [voiceOpen, setVoiceOpen] = useState(false);
 
   const allowed = NAV.filter((item) => item.roles.includes(user.role));
   const pinned = MOBILE_LIMIT[user.role] ?? MOBILE_LIMIT.agent;
@@ -145,7 +148,43 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
   // the click handler flashes the sheet away before the new page is ready.
   useEffect(() => {
     setMoreOpen(false);
+    // A voice draft saved as a lead or listing navigates to it; the sheet
+    // belongs to the screen it was opened on.
+    setVoiceOpen(false);
   }, [pathname]);
+
+  const dock: ReactNode[] = [
+    ...mobileItems.map(({ href, label, icon: Icon }) => (
+      <Link
+        key={href}
+        href={href}
+        aria-label={label}
+        aria-current={isActive(pathname, href) ? "page" : undefined}
+        className="press tap flex items-center justify-center rounded-pill"
+      >
+        <DockIcon Icon={Icon} active={isActive(pathname, href)} />
+      </Link>
+    )),
+    ...(overflowItems.length > 0
+      ? [
+          <button
+            key="more"
+            type="button"
+            onClick={() => setMoreOpen(true)}
+            aria-label="More"
+            aria-expanded={moreOpen}
+            className={`press tap flex items-center justify-center rounded-pill px-4 transition-colors ${
+              overflowItems.some((item) => isActive(pathname, item.href))
+                ? "bg-sandstone text-white"
+                : "text-ink-dim"
+            }`}
+          >
+            <MoreIcon className="h-[22px] w-[22px]" />
+          </button>,
+        ]
+      : []),
+  ];
+  const half = Math.floor(dock.length / 2);
 
   async function signOut() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -187,6 +226,15 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
             );
           })}
         </nav>
+
+        <button
+          type="button"
+          onClick={() => setVoiceOpen(true)}
+          className="press tap mt-4 flex items-center justify-center gap-2 rounded-pill bg-sandstone px-4 text-sm font-semibold text-white"
+        >
+          <MicIcon className="h-[18px] w-[18px]" />
+          Add by voice
+        </button>
 
         <div className="mt-4 rounded-tile bg-ink-soft p-3">
           <div className="flex items-center gap-2.5">
@@ -242,33 +290,20 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
         className="safe-bottom fixed inset-x-0 bottom-0 z-40 flex justify-center px-4 lg:hidden"
       >
         <div className="flex items-center gap-1 rounded-pill bg-ink px-2 py-2 shadow-float">
-          {mobileItems.map(({ href, label, icon: Icon }) => (
-            <Link
-              key={href}
-              href={href}
-              aria-label={label}
-              aria-current={isActive(pathname, href) ? "page" : undefined}
-              className="press tap flex items-center justify-center rounded-pill"
-            >
-              <DockIcon Icon={Icon} active={isActive(pathname, href)} />
-            </Link>
-          ))}
-
-          {overflowItems.length > 0 && (
+          {dock.slice(0, half)}
+          {/* The one action every role reaches for mid-conversation, so it
+              sits in the thumb's centre and stands proud of the pill. */}
+          <span className="relative mx-1 h-11 w-16 shrink-0">
             <button
               type="button"
-              onClick={() => setMoreOpen(true)}
-              aria-label="More"
-              aria-expanded={moreOpen}
-              className={`press tap flex items-center justify-center rounded-pill px-4 transition-colors ${
-                overflowItems.some((item) => isActive(pathname, item.href))
-                  ? "bg-sandstone text-white"
-                  : "text-ink-dim"
-              }`}
+              onClick={() => setVoiceOpen(true)}
+              aria-label="Add by voice"
+              className="press absolute left-1/2 top-1/2 flex h-16 w-16 -translate-x-1/2 -translate-y-[62%] items-center justify-center rounded-full bg-sandstone text-white shadow-float ring-4 ring-parchment"
             >
-              <MoreIcon className="h-[22px] w-[22px]" />
+              <MicIcon className="h-7 w-7" />
             </button>
-          )}
+          </span>
+          {dock.slice(half)}
         </div>
       </nav>
 
@@ -304,6 +339,10 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
           })}
         </ul>
       </Sheet>
+
+      {voiceOpen && (
+        <VoiceSheet role={user.role} open onClose={() => setVoiceOpen(false)} />
+      )}
     </div>
   );
 }

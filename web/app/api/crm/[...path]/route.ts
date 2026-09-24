@@ -48,6 +48,11 @@ async function forward(request: Request, path: string[]) {
   });
 }
 
+// Voice notes and call recordings wait on transcription, and a sleeping
+// free-plan API can take most of a minute to wake. 60s is the most every
+// Vercel plan allows without extra configuration.
+export const maxDuration = 60;
+
 type Ctx = { params: Promise<{ path: string[] }> };
 
 export async function GET(request: Request, ctx: Ctx) {

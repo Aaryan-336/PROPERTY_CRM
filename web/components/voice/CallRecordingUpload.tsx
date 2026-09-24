@@ -7,6 +7,8 @@ import { UploadIcon } from "@/components/icons";
 import { ChipGroup } from "@/components/Sheet";
 import { Card, SectionHeading } from "@/components/ui";
 import type { CallRecordingDraft } from "@/lib/types";
+
+import { UPLOAD_TIMEOUT_MS, explainFailure } from "./errors";
 import { CALL_OUTCOMES, TEMPERATURES } from "@/lib/types";
 
 // Uploads travel through this app's own server so the session token never
@@ -55,12 +57,16 @@ export function CallRecordingUpload({ contactId }: { contactId: number }) {
     setPhase("working");
     const form = new FormData();
     form.append("audio", file, file.name);
-    const res = await fetch(`/api/crm/calls/${contactId}/recording`, { method: "POST", body: form }).catch(
-      () => null,
-    );
+    const res = await fetch(`/api/crm/calls/${contactId}/recording`, {
+      method: "POST",
+      body: form,
+      signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+    }).catch(() => null);
     const body = res ? await res.json().catch(() => null) : null;
     if (!res?.ok || !body) {
-      setError(body?.error?.message ?? "Could not transcribe that recording. Try again.");
+      setError(
+        explainFailure(res, body, "Call transcription", "Could not transcribe that recording. Try again."),
+      );
       setPhase("idle");
       return;
     }

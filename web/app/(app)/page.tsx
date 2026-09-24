@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 import { AgentHome } from "@/components/home/AgentHome";
 import { ColdCallerHome } from "@/components/home/ColdCallerHome";
 import { OwnerHome } from "@/components/home/OwnerHome";
-import { VoiceQuickAdd } from "@/components/voice/VoiceQuickAdd";
 import { SESSION_EXPIRED_ROUTE, getCurrentUser } from "@/lib/session";
 
 /**
@@ -23,10 +22,5 @@ export default async function Home() {
     ) : (
       <AgentHome user={user} />
     );
-  return (
-    <>
-      {home}
-      <VoiceQuickAdd role={user.role} variant="fab" />
-    </>
-  );
+  return home;
 }
