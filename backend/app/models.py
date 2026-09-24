@@ -518,6 +518,9 @@ class CallLog(Base):
     # to a person and a moment.
     marked_lead: Mapped[bool | None] = mapped_column(Boolean, default=False)
     follow_up_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Whisper transcript of an uploaded call recording, when the remark came
+    # from one. The audio itself is never stored.
+    transcript: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

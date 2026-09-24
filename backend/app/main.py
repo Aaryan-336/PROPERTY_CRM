@@ -30,6 +30,7 @@ from app.routers import (
     showings,
     tasks,
     users,
+    voice,
     whatsapp,
 )
 
@@ -201,5 +202,6 @@ for module in (
     whatsapp,
     lead_batches,
     meta_ads,
+    voice,
 ):
     app.include_router(module.router)

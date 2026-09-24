@@ -84,6 +84,7 @@ def log_call(
         flagged_for_owner=payload.flagged_for_owner,
         marked_lead=payload.marked_lead,
         follow_up_at=payload.follow_up_at,
+        transcript=payload.transcript,
     )
     db.add(call)
     db.flush()

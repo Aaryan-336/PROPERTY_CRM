@@ -103,6 +103,9 @@ class Settings(BaseSettings):
     # where it can be restarted and scaled without bouncing the API.
     extraction_in_api: bool = False
 
+    # Groq Whisper model for voice notes and call recordings.
+    transcription_model: str = "whisper-large-v3-turbo"
+
     # --- Meta Ads ---------------------------------------------------------
     # The firm's Meta developer app (Ads MCP use case). Each CRM user still
     # authorizes their *own* Meta account; these only identify the app.

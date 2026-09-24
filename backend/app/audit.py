@@ -56,6 +56,7 @@ _RESOURCE_ROUTES: tuple[tuple[str, str], ...] = (
     # message the gateway delivered.
     ("/whatsapp", "whatsapp_group"),
     ("/meta-ads", "meta_ads"),
+    ("/voice", "voice"),
 )
 
 _ID_IN_PATH = re.compile(r"^/[^/]+/(\d+)")

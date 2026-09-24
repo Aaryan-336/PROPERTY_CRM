@@ -655,6 +655,7 @@ class CallCreate(BaseModel):
     # from the outcome — "interested" on a cold call is often just politeness.
     marked_lead: bool = False
     follow_up_at: datetime | None = None
+    transcript: str | None = Field(default=None, max_length=200_000)
 
 
 class CallOut(BaseModel):
