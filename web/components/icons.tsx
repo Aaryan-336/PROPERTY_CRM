@@ -142,6 +142,14 @@ export const UploadIcon = (p: IconProps) => (
   </Svg>
 );
 
+/** Paid ads: a megaphone. */
+export const MegaphoneIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3 11v2a1 1 0 0 0 1 1h3l6 4V6L7 10H4a1 1 0 0 0-1 1Z" />
+    <path d="M17 9a3 3 0 0 1 0 6M8 14l1 6h2" />
+  </Svg>
+);
+
 export const KeyIcon = (p: IconProps) => (
   <Svg {...p}>
     <circle cx="7.5" cy="15.5" r="4.5" />

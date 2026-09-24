@@ -496,3 +496,69 @@ export type WhatsAppGroupCandidate = {
   group_id: number | null;
   is_active: boolean | null;
 };
+
+/* ----------------------------------------------------------- Meta Ads */
+
+export type MetaAdsState = "connected" | "disconnected" | "reauth_required";
+
+/** The caller's own Meta connection. The token itself never leaves the API. */
+export type MetaAdsStatus = {
+  configured: boolean;
+  state: MetaAdsState;
+  meta_user_name: string | null;
+  ad_account_id: string | null;
+  ad_account_name: string | null;
+  currency: string | null;
+  token_expires_at: string | null;
+  missing_scopes: string[];
+  last_error: string | null;
+  can_manage: boolean;
+};
+
+export type MetaAdAccount = {
+  id: string;
+  name: string;
+  currency: string | null;
+  account_status: number | null;
+};
+
+/** Budgets are in major currency units (rupees), as decimal strings. */
+export type MetaCampaign = {
+  id: string;
+  name: string;
+  status: string;
+  effective_status: string;
+  objective: string | null;
+  daily_budget: string | null;
+  lifetime_budget: string | null;
+  budget_remaining: string | null;
+  start_time: string | null;
+  stop_time: string | null;
+};
+
+export type MetaCampaignList = {
+  campaigns: MetaCampaign[];
+  currency: string | null;
+  via: string;
+};
+
+export type MetaInsightRow = {
+  campaign_id: string;
+  campaign_name: string;
+  spend: number;
+  impressions: number;
+  reach: number;
+  clicks: number;
+  ctr: number;
+  cpc: number;
+  cpm: number;
+  leads: number;
+};
+
+export type MetaInsights = {
+  date_preset: string;
+  currency: string | null;
+  rows: MetaInsightRow[];
+  totals: MetaInsightRow;
+  via: string;
+};

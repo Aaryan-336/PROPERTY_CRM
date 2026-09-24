@@ -102,3 +102,23 @@ export function roleLabel(role: string): string {
     ] ?? titleCase(role)
   );
 }
+
+/** An ad-account amount in its own currency, e.g. ₹1,500 or ₹4.94. */
+export function currencyAmount(
+  value: string | number | null | undefined,
+  currency: string | null | undefined,
+  { exact = false }: { exact?: boolean } = {},
+): string {
+  if (value === null || value === undefined || value === "") return "—";
+  const n = typeof value === "string" ? Number(value) : value;
+  if (Number.isNaN(n)) return "—";
+  try {
+    return new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: currency || "INR",
+      maximumFractionDigits: exact || n < 100 ? 2 : 0,
+    }).format(n);
+  } catch {
+    return `${currency ?? ""} ${n.toFixed(2)}`.trim();
+  }
+}

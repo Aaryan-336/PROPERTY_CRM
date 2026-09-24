@@ -2,9 +2,12 @@ import { redirect } from "next/navigation";
 
 import { InstallApp } from "@/components/InstallApp";
 import { ChangePassword } from "@/components/account/ChangePassword";
+import { ConnectMetaAds } from "@/components/meta-ads/ConnectMetaAds";
 import { InkCard } from "@/components/ui";
+import { apiOptional } from "@/lib/api";
 import { roleLabel } from "@/lib/format";
 import { SESSION_EXPIRED_ROUTE, getCurrentUser } from "@/lib/session";
+import type { MetaAdsStatus } from "@/lib/types";
 
 export const metadata = { title: "Your account · Balaji CRM" };
 
@@ -16,6 +19,8 @@ export const metadata = { title: "Your account · Balaji CRM" };
 export default async function AccountPage() {
   const user = await getCurrentUser();
   if (!user) redirect(SESSION_EXPIRED_ROUTE);
+  // Null for roles without meta_ads.read (the API answers 403) -- no card.
+  const meta = await apiOptional<MetaAdsStatus>("/meta-ads/status");
 
   return (
     <div className="mx-auto max-w-lg space-y-5">
@@ -33,6 +38,8 @@ export default async function AccountPage() {
       </InkCard>
 
       <InstallApp />
+
+      {meta && <ConnectMetaAds status={meta} />}
 
       <ChangePassword />
     </div>
