@@ -60,7 +60,7 @@ services:
       # uses SELECT ... FOR UPDATE SKIP LOCKED, so two extractors divide the
       # queue rather than duplicate it.
       - key: EXTRACTION_IN_API
-        value: "false"
+        value: "true"
       # Meta Ads. META_REDIRECT_URI is https://<this API>/meta-ads/oauth/callback
       # and must also be registered on the Meta app. The encryption key is
       # generated once and must stay stable: rotating it without keeping the old
