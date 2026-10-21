@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 
-/** Edit these two lines before submitting the pages to Meta. */
-export const LEGAL_CONTACT_EMAIL = "CHANGE-ME@example.com";
+export const LEGAL_CONTACT_EMAIL = "balajirealtymalad@gmail.com";
 export const LEGAL_UPDATED = "21 October 2026";
 
 export function LegalPage({ title, children }: { title: string; children: ReactNode }) {
