@@ -987,6 +987,113 @@ class MetaAdsStatus(BaseModel):
     missing_scopes: list[str] = []
     last_error: str | None = None
     can_manage: bool = False
+    page_id: str | None = None
+    page_name: str | None = None
+    instagram_username: str | None = None
+    # True once the Page is subscribed AND the server can verify Meta's webhook.
+    leads_live: bool = False
+    webhook_configured: bool = False
+
+
+class MetaPageOut(BaseModel):
+    id: str
+    name: str
+    instagram_id: str | None = None
+    instagram_username: str | None = None
+
+
+class MetaPageSelect(BaseModel):
+    page_id: str = Field(pattern=r"^\d{1,32}$")
+
+
+class MetaLeadFormOut(BaseModel):
+    id: str
+    name: str
+    status: str | None = None
+    leads_count: int | None = None
+
+
+class MetaLeadOut(BaseModel):
+    id: int
+    campaign_name: str | None
+    ad_name: str | None
+    status: str
+    contact_id: int | None
+    error: str | None
+    received_at: datetime
+
+
+class MetaLeadSyncResult(BaseModel):
+    new: int
+    retried: int
+
+
+class MetaCampaignLeadRow(BaseModel):
+    campaign_id: str
+    campaign_name: str
+    spend: float
+    meta_leads: int = Field(description="Leads Meta reports in Ads Manager.")
+    crm_leads: int = Field(description="Leads that reached the CRM.")
+    contacted: int
+    qualified: int = Field(description="Site visit scheduled or beyond.")
+    visited: int
+    closed: int
+    cost_per_lead: float | None
+    cost_per_qualified: float | None
+    cost_per_visit: float | None
+
+
+class MetaLeadPerformance(BaseModel):
+    date_preset: str
+    currency: str | None
+    rows: list[MetaCampaignLeadRow]
+    totals: MetaCampaignLeadRow
+    failed_leads: int
+
+
+class MetaReelMetrics(BaseModel):
+    media_id: str
+    caption: str
+    permalink: str | None
+    thumbnail_url: str | None
+    posted_at: str | None
+    views: int
+    reach: int
+    likes: int
+    comments: int
+    shares: int
+    saved: int
+    engagement_rate: float
+    score: int | None
+    rank: int
+    verdict: Literal["strong", "decent", "weak", "not_enough_data", "skip"]
+    reasons: list[str]
+    matched_areas: list[dict]
+    campaign: dict | None
+
+
+class MetaReelSuggestions(BaseModel):
+    instagram_username: str | None
+    currency: str | None
+    reels: list[MetaReelMetrics]
+
+
+class MetaReelCampaignCreate(BaseModel):
+    form_id: str = Field(pattern=r"^\d{1,32}$")
+    daily_budget: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
+    name: str = Field(min_length=3, max_length=120)
+    cities: list[str] = Field(default_factory=list, max_length=5)
+    age_min: int = Field(default=25, ge=18, le=65)
+    age_max: int = Field(default=55, ge=18, le=65)
+    confirm: bool
+
+
+class MetaReelCampaignResult(BaseModel):
+    campaign_id: str
+    adset_id: str
+    ad_id: str
+    status: Literal["PAUSED"] = "PAUSED"
+    ads_manager_url: str
 
 
 class MetaAdAccountOut(BaseModel):

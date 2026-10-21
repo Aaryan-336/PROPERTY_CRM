@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 
 import { CampaignControls } from "@/components/meta-ads/CampaignControls";
 import { ConnectMetaAds } from "@/components/meta-ads/ConnectMetaAds";
+import { LeadIntake } from "@/components/meta-ads/LeadIntake";
+import { ReelSuggestions } from "@/components/meta-ads/ReelSuggestions";
 import { Card, EmptyState, InkCard, MetricTile, SectionHeading, StatusPill, type Tone } from "@/components/ui";
 import { ApiRequestError, api } from "@/lib/api";
 import { currencyAmount, titleCase } from "@/lib/format";
@@ -11,6 +13,10 @@ import type {
   MetaAdAccount,
   MetaAdsStatus,
   MetaCampaignList,
+  MetaLeadForm,
+  MetaLeadPerformance,
+  MetaLeadRecord,
+  MetaPage,
   MetaInsightRow,
   MetaInsights,
 } from "@/lib/types";
@@ -87,10 +93,14 @@ export default async function MetaAdsPage({
   const live = status.state === "connected";
 
   const none = Promise.resolve({});
-  const [accounts, campaigns, insights]: [
+  const [accounts, campaigns, insights, pages, recent, forms, perf]: [
     Attempt<MetaAdAccount[]>,
     Attempt<MetaCampaignList>,
     Attempt<MetaInsights>,
+    Attempt<MetaPage[]>,
+    Attempt<MetaLeadRecord[]>,
+    Attempt<MetaLeadForm[]>,
+    Attempt<MetaLeadPerformance>,
   ] = await Promise.all([
     live ? attempt(() => api<MetaAdAccount[]>("/meta-ads/ad-accounts")) : none,
     live && status.ad_account_id
@@ -98,6 +108,12 @@ export default async function MetaAdsPage({
       : none,
     live && status.ad_account_id
       ? attempt(() => api<MetaInsights>(`/meta-ads/insights?date_preset=${range}`))
+      : none,
+    live ? attempt(() => api<MetaPage[]>("/meta-ads/pages")) : none,
+    live ? attempt(() => api<MetaLeadRecord[]>("/meta-ads/leads/recent?limit=8")) : none,
+    live && status.page_id ? attempt(() => api<MetaLeadForm[]>("/meta-ads/lead-forms")) : none,
+    live && status.ad_account_id
+      ? attempt(() => api<MetaLeadPerformance>(`/meta-ads/lead-performance?date_preset=${range}`))
       : none,
   ]);
 
@@ -118,6 +134,10 @@ export default async function MetaAdsPage({
   return (
     <div className="space-y-5">
       <ConnectMetaAds status={freshStatus} accounts={accounts.data ?? []} result={params.meta} />
+
+      {freshStatus.state === "connected" && (
+        <LeadIntake status={freshStatus} pages={pages.data ?? []} recent={recent.data ?? []} />
+      )}
 
       {freshStatus.state === "connected" && status.ad_account_id && (
         <>
@@ -214,6 +234,53 @@ export default async function MetaAdsPage({
               </ul>
             )}
           </section>
+
+          <section>
+            <SectionHeading
+              title="What your ad spend turned into"
+              hint="Leads that reached the CRM, and how far they got — so you see cost per site visit, not just cost per lead."
+            />
+            {perf.error ? (
+              <Card className="p-5 text-sm text-signal">{perf.error}</Card>
+            ) : (perf.data?.rows.length ?? 0) === 0 ? (
+              <EmptyState title="No leads from Meta in this period yet." />
+            ) : (
+              <Card className="overflow-x-auto p-0">
+                <table className="tabular w-full min-w-[560px] text-left text-xs">
+                  <thead className="text-[10px] uppercase tracking-[0.1em] text-slate">
+                    <tr>
+                      {["Campaign", "Spend", "Leads", "Qualified", "Visited", "Closed", "Per lead", "Per visit"].map((h) => (
+                        <th key={h} className="px-3 py-2.5 font-semibold">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-hairline">
+                    {[...perf.data!.rows, perf.data!.totals].map((r, i, all) => (
+                      <tr key={r.campaign_id || "total"} className={i === all.length - 1 ? "font-semibold text-ink" : "text-ink"}>
+                        <td className="max-w-[200px] truncate px-3 py-2.5">{r.campaign_name}</td>
+                        <td className="px-3 py-2.5">{currencyAmount(r.spend, currency)}</td>
+                        <td className="px-3 py-2.5">{r.crm_leads}{r.meta_leads && r.meta_leads !== r.crm_leads ? ` / ${r.meta_leads}` : ""}</td>
+                        <td className="px-3 py-2.5">{r.qualified}</td>
+                        <td className="px-3 py-2.5">{r.visited}</td>
+                        <td className="px-3 py-2.5">{r.closed}</td>
+                        <td className="px-3 py-2.5">{r.cost_per_lead !== null ? currencyAmount(r.cost_per_lead, currency) : "—"}</td>
+                        <td className="px-3 py-2.5">{r.cost_per_visit !== null ? currencyAmount(r.cost_per_visit, currency) : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Card>
+            )}
+            {(perf.data?.failed_leads ?? 0) > 0 && (
+              <p className="mt-2 text-xs font-semibold text-signal">
+                {perf.data!.failed_leads} lead{perf.data!.failed_leads === 1 ? "" : "s"} could not be imported. Press “Sync now” above to retry.
+              </p>
+            )}
+          </section>
+
+          {freshStatus.instagram_username && (
+            <ReelSuggestions currency={currency} canManage={status.can_manage} forms={forms.data ?? []} />
+          )}
         </>
       )}
     </div>

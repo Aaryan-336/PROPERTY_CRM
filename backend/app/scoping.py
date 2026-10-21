@@ -28,6 +28,7 @@ from app.models import (
     CallLog,
     Contact,
     MetaAdConnection,
+    MetaLead,
     Property,
     PropertyInterest,
     PropertySource,
@@ -242,3 +243,11 @@ class ScopedQuery:
 # `sees_everything` is Owner-only, so a manager row -- if one were created out
 # of band -- is scoped as narrowly as an Agent. Fail closed, then widen
 # deliberately in Phase 2 when team scoping is actually built and tested.
+
+    def meta_leads(self) -> Select:
+        """Raw Meta lead payloads. Owner only: they carry prospects' contact
+        details exactly as submitted, before any masking."""
+        stmt = select(MetaLead)
+        if self.principal.sees_everything:
+            return _mark(stmt)
+        return _mark(stmt.where(false()))

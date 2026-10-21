@@ -12,17 +12,17 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import TypeVar
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.audit import _write_entry
 from app.config import settings
-from app.db import system_scope
+from app.db import SCOPE_MARKER, system_scope
 from app.deps import PrincipalDep, ScopedDep, SessionDep, require
 from app.errors import ApiError, bad_request, not_found
 from app.meta_ads import (
@@ -38,9 +38,14 @@ from app.meta_ads import (
     to_major,
     to_minor,
 )
+from app import meta_leads as leads_svc
+from app import meta_reels
 from app.meta_crypto import decrypt_token, encrypt_token
 from app.models import (
     META_CONNECTED,
+    META_LEAD_FAILED,
+    Contact,
+    MetaLead,
     META_DISCONNECTED,
     META_PENDING,
     META_REAUTH_REQUIRED,
@@ -52,6 +57,16 @@ from app.schemas import (
     MetaAdAccountOut,
     MetaAdAccountSelect,
     MetaAdsStatus,
+    MetaCampaignLeadRow,
+    MetaLeadFormOut,
+    MetaLeadOut,
+    MetaLeadPerformance,
+    MetaLeadSyncResult,
+    MetaPageOut,
+    MetaPageSelect,
+    MetaReelCampaignCreate,
+    MetaReelCampaignResult,
+    MetaReelSuggestions,
     MetaBudgetChange,
     MetaCampaignList,
     MetaCampaignOut,
@@ -183,6 +198,12 @@ def status(principal: PrincipalDep, scoped: ScopedDep, db: SessionDep) -> MetaAd
         missing_scopes=[s for s in REQUIRED_SCOPES if s not in granted] if connected else [],
         last_error=row.last_error if row else None,
         can_manage=has(principal, "meta_ads.manage"),
+        page_id=row.page_id if connected and row else None,
+        page_name=row.page_name if connected and row else None,
+        instagram_username=row.instagram_username if connected and row else None,
+        leads_live=bool(connected and row and row.page_subscribed_at)
+        and bool(settings.meta_webhook_verify_token),
+        webhook_configured=bool(settings.meta_webhook_verify_token),
     )
 
 
@@ -209,6 +230,25 @@ def _back(result: str) -> RedirectResponse:
     return RedirectResponse(
         f"{settings.meta_redirect_after_connect}?meta={result}", status_code=303
     )
+
+
+def _apply_page(db: SessionDep, row: MetaAdConnection, page: dict) -> None:
+    """Record the Page / Instagram account and subscribe the Page to lead
+    delivery. Subscription failing is recorded, not raised: the connection and
+    campaign tools still work without it."""
+    row.page_id = page["id"]
+    row.page_name = page["name"]
+    row.instagram_id = page.get("instagram_id")
+    row.instagram_username = page.get("instagram_username")
+    row.page_subscribed_at = None
+    try:
+        if page.get("access_token"):
+            GraphAds(page["access_token"]).subscribe_page_to_leads(page["id"])
+            row.page_subscribed_at = _now()
+    except (MetaAuthError, MetaApiError) as exc:
+        row.last_error = f"Could not subscribe the Page to leads: {exc}"[:500]
+    row.updated_at = _now()
+    db.commit()
 
 
 @router.get("/oauth/callback", include_in_schema=False)
@@ -275,6 +315,17 @@ def oauth_callback(
     row.last_error = None
     row.connected_at = _now()
     db.commit()
+
+    # One Page is the common case; choose it so leads work without a second
+    # step. Several Pages means the owner picks on the Meta Ads screen.
+    try:
+        pages = graph.pages()
+        keep = next((p for p in pages if p["id"] == row.page_id), None)
+        if keep or len(pages) == 1:
+            _apply_page(db, row, keep or pages[0])
+    except (MetaAuthError, MetaApiError) as exc:
+        row.last_error = f"Page setup: {exc}"[:500]
+        db.commit()
 
     _write_entry(
         user_id=row.user_id,
@@ -503,3 +554,309 @@ def change_budget(
         {"daily_budget": str(to_major(after["daily_budget"], currency))},
     )
     return MetaWriteResult(campaign=_campaign_out(after, currency), via=via)
+
+
+# ---------------------------------------------------------------------------
+# Page, lead forms and Meta Lead Ads intake
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/pages",
+    response_model=list[MetaPageOut],
+    dependencies=[Depends(require("meta_ads.read"))],
+)
+def pages(scoped: ScopedDep, db: SessionDep) -> list[MetaPageOut]:
+    row, token = _live(scoped, db, need_account=False)
+    found = _call(db, row, lambda: GraphAds(token).pages())
+    return [MetaPageOut(**{k: v for k, v in p.items() if k != "access_token"}) for p in found]
+
+
+@router.post(
+    "/page",
+    response_model=MetaAdsStatus,
+    dependencies=[Depends(require("meta_ads.manage"))],
+)
+def select_page(
+    payload: MetaPageSelect,
+    principal: PrincipalDep,
+    scoped: ScopedDep,
+    db: SessionDep,
+    request: Request,
+) -> MetaAdsStatus:
+    row, token = _live(scoped, db, need_account=False)
+    found = _call(db, row, lambda: GraphAds(token).pages())
+    chosen = next((p for p in found if p["id"] == payload.page_id), None)
+    if chosen is None:
+        raise not_found("Page")
+    before = row.page_id
+    _apply_page(db, row, chosen)
+    request.state.audit.action_override = "edit"
+    request.state.audit.set_resource(row.id)
+    request.state.audit.record_changes({"page_id": before}, {"page_id": chosen["id"]})
+    return status(principal, scoped, db)
+
+
+def _page_graph(scoped: ScopedDep, db: SessionDep) -> tuple[MetaAdConnection, str, GraphAds]:
+    row, token = _live(scoped, db, need_account=False)
+    if not row.page_id:
+        raise ApiError(409, "meta_no_page", "Choose a Facebook Page first.")
+    graph = _call(db, row, lambda: leads_svc._page_graph(GraphAds(token), row.page_id))
+    return row, token, graph
+
+
+@router.get(
+    "/lead-forms",
+    response_model=list[MetaLeadFormOut],
+    dependencies=[Depends(require("meta_ads.read"))],
+)
+def lead_forms(scoped: ScopedDep, db: SessionDep) -> list[MetaLeadFormOut]:
+    row, _, graph = _page_graph(scoped, db)
+    forms = _call(db, row, lambda: graph.lead_forms(row.page_id))
+    return [MetaLeadFormOut(**f) for f in forms]
+
+
+@router.post(
+    "/leads/sync",
+    response_model=MetaLeadSyncResult,
+    dependencies=[Depends(require("meta_ads.manage"))],
+)
+def sync_leads(scoped: ScopedDep, db: SessionDep, request: Request) -> MetaLeadSyncResult:
+    """Read every lead form directly and import what the webhook missed.
+    Safe to press repeatedly: a lead already imported is skipped."""
+    row, token, _ = _page_graph(scoped, db)
+    request.state.audit.action_override = "edit"
+    request.state.audit.set_resource(row.id)
+    result = _call(db, row, lambda: leads_svc.sync_forms(db, row, token))
+    request.state.audit.add(**result)
+    return MetaLeadSyncResult(**result)
+
+
+@router.get(
+    "/leads/recent",
+    response_model=list[MetaLeadOut],
+    dependencies=[Depends(require("meta_ads.read"))],
+)
+def recent_leads(scoped: ScopedDep, db: SessionDep, limit: int = Query(20, ge=1, le=100)) -> list[MetaLeadOut]:
+    rows = db.execute(
+        scoped.meta_leads().order_by(MetaLead.created_at.desc()).limit(limit)
+    ).scalars().all()
+    return [
+        MetaLeadOut(
+            id=r.id,
+            campaign_name=r.campaign_name,
+            ad_name=r.ad_name,
+            status=r.status,
+            contact_id=r.contact_id,
+            error=r.error,
+            received_at=r.created_at,
+        )
+        for r in rows
+    ]
+
+
+_PRESET_DAYS = {"today": 0, "yesterday": 1, "last_7d": 7, "last_14d": 14, "last_30d": 30}
+
+
+def _window_start(preset: str) -> datetime | None:
+    now = _now()
+    if preset == "maximum":
+        return None
+    if preset == "this_month":
+        return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    if preset == "last_month":
+        first = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        return (first.replace(day=1) - timedelta(days=1)).replace(day=1)
+    days = _PRESET_DAYS[preset]
+    return (now - timedelta(days=days)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+
+
+def _per(spend: float, n: int) -> float | None:
+    return round(spend / n, 2) if n else None
+
+
+@router.get(
+    "/lead-performance",
+    response_model=MetaLeadPerformance,
+    dependencies=[Depends(require("meta_ads.read"))],
+)
+def lead_performance(
+    scoped: ScopedDep, db: SessionDep, date_preset: str = Query("last_30d")
+) -> MetaLeadPerformance:
+    """Ad spend against what the leads actually did in the CRM -- the number
+    Ads Manager cannot give: cost per lead *that got a site visit*."""
+    if date_preset not in DATE_PRESETS:
+        raise bad_request("invalid_date_preset", f"date_preset must be one of {', '.join(DATE_PRESETS)}.")
+    row, token = _live(scoped, db)
+    ins, _via = _call(db, row, lambda: AdsClient(token, row.ad_account_id).insights(date_preset))
+    spend_by = {r["campaign_id"]: r for r in ins}
+
+    start = _window_start(date_preset)
+    # Owner-only route (meta_ads.read); the join to contacts is why this is
+    # built by hand instead of from scoped.meta_leads().
+    q = (
+        select(MetaLead.campaign_id, MetaLead.campaign_name, Contact.stage, MetaLead.status)
+        .select_from(MetaLead)
+        .outerjoin(Contact, (Contact.id == MetaLead.contact_id) & Contact.deleted_at.is_(None))
+        .execution_options(**{SCOPE_MARKER: True})
+    )
+    if start is not None:
+        q = q.where(MetaLead.created_at >= start)
+    crm: dict[str, dict] = {}
+    for campaign_id, name, stage, lead_status in db.execute(q):
+        if not campaign_id or lead_status == META_LEAD_FAILED:
+            continue
+        c = crm.setdefault(campaign_id, {"name": name, "n": 0, "contacted": 0, "qualified": 0, "visited": 0, "closed": 0})
+        c["n"] += 1
+        c["contacted"] += stage not in (None, "new")
+        c["qualified"] += stage in ("site_visit_scheduled", "visited", "negotiating", "closed")
+        c["visited"] += stage in ("visited", "negotiating", "closed")
+        c["closed"] += stage == "closed"
+
+    def make(cid: str, name: str, spend: float, meta_leads: int, c: dict) -> MetaCampaignLeadRow:
+        return MetaCampaignLeadRow(
+            campaign_id=cid,
+            campaign_name=name,
+            spend=round(spend, 2),
+            meta_leads=meta_leads,
+            crm_leads=c["n"],
+            contacted=c["contacted"],
+            qualified=c["qualified"],
+            visited=c["visited"],
+            closed=c["closed"],
+            cost_per_lead=_per(spend, c["n"] or meta_leads),
+            cost_per_qualified=_per(spend, c["qualified"]),
+            cost_per_visit=_per(spend, c["visited"]),
+        )
+
+    empty = {"n": 0, "contacted": 0, "qualified": 0, "visited": 0, "closed": 0}
+    rows = [
+        make(
+            cid,
+            (spend_by.get(cid) or {}).get("campaign_name") or crm.get(cid, {}).get("name") or cid,
+            (spend_by.get(cid) or {}).get("spend", 0.0),
+            (spend_by.get(cid) or {}).get("leads", 0),
+            crm.get(cid, empty),
+        )
+        for cid in sorted(set(spend_by) | set(crm))
+    ]
+    rows.sort(key=lambda r: -r.spend)
+    total = {k: sum(getattr(r, k) for r in rows) for k in ("crm_leads", "contacted", "qualified", "visited", "closed")}
+    totals = make(
+        "",
+        "All campaigns",
+        sum(r.spend for r in rows),
+        sum(r.meta_leads for r in rows),
+        {"n": total["crm_leads"], **{k: total[k] for k in ("contacted", "qualified", "visited", "closed")}},
+    )
+    failed = db.execute(
+        select(func.count()).select_from(MetaLead).where(MetaLead.status == META_LEAD_FAILED)
+        .execution_options(**{SCOPE_MARKER: True})
+    ).scalar_one()
+    return MetaLeadPerformance(
+        date_preset=date_preset, currency=row.ad_account_currency, rows=rows, totals=totals, failed_leads=failed
+    )
+
+
+# ---------------------------------------------------------------------------
+# Instagram reels -> campaign suggestions
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/reels/suggestions",
+    response_model=MetaReelSuggestions,
+    dependencies=[Depends(require("meta_ads.read"))],
+)
+def reel_suggestions(scoped: ScopedDep, db: SessionDep) -> MetaReelSuggestions:
+    row, token = _live(scoped, db, need_account=False)
+    if not row.instagram_id:
+        raise ApiError(
+            409,
+            "meta_no_instagram",
+            "No Instagram business account is linked to the chosen Facebook Page. "
+            "Link one in Meta Business Settings, then reconnect.",
+        )
+    graph = GraphAds(token)
+    reels = _call(db, row, lambda: meta_reels.fetch_reels(graph, row.instagram_id))
+    demand = meta_reels.area_demand(db)
+    return MetaReelSuggestions(
+        instagram_username=row.instagram_username,
+        currency=row.ad_account_currency,
+        reels=meta_reels.build_suggestions(reels, demand, row.ad_account_currency),
+    )
+
+
+@router.post(
+    "/reels/{media_id}/campaign",
+    response_model=MetaReelCampaignResult,
+    dependencies=[Depends(require("meta_ads.manage"))],
+)
+def create_reel_campaign(
+    media_id: str,
+    payload: MetaReelCampaignCreate,
+    scoped: ScopedDep,
+    db: SessionDep,
+    request: Request,
+) -> MetaReelCampaignResult:
+    """Create a campaign from a reel -- always PAUSED. Turning it on is a
+    separate, confirmed action from the campaign list."""
+    if not _CAMPAIGN_ID.match(media_id):
+        raise not_found("Reel")
+    request.state.audit.action_override = "create"
+    request.state.audit.add(media_id=media_id, form_id=payload.form_id)
+    if not payload.confirm:
+        raise bad_request("confirmation_required", "Confirm before anything is created on Meta.")
+    if payload.age_min > payload.age_max:
+        raise bad_request("invalid_age_range", "Minimum age cannot exceed maximum age.")
+    row, token = _live(scoped, db)
+    if not row.page_id or not row.instagram_id:
+        raise ApiError(409, "meta_no_instagram", "Choose a Page with a linked Instagram account first.")
+    request.state.audit.add(ad_account_id=row.ad_account_id)
+
+    user_graph = GraphAds(token)
+
+    def check() -> None:
+        reels = user_graph.ig_media(row.instagram_id, limit=50)
+        if not any(m.get("id") == media_id for m in reels):
+            raise not_found("Reel")
+        pg = leads_svc._page_graph(user_graph, row.page_id)
+        if not any(f["id"] == payload.form_id for f in pg.lead_forms(row.page_id)):
+            raise bad_request("unknown_form", "That lead form does not belong to the connected Page.")
+
+    _call(db, row, check)
+
+    cities = payload.cities or [c.strip() for c in settings.meta_target_cities.split(",") if c.strip()]
+    created = _call(
+        db,
+        row,
+        lambda: meta_reels.create_paused_campaign(
+            user_graph,
+            account_id=row.ad_account_id,
+            currency=row.ad_account_currency,
+            page_id=row.page_id,
+            instagram_id=row.instagram_id,
+            media_id=media_id,
+            form_id=payload.form_id,
+            name=payload.name,
+            daily_budget=payload.daily_budget,
+            cities=cities,
+            age_min=payload.age_min,
+            age_max=payload.age_max,
+        ),
+    )
+    request.state.audit.add(
+        daily_budget=str(payload.daily_budget), currency=row.ad_account_currency, **created
+    )
+    account = row.ad_account_id.removeprefix("act_")
+    return MetaReelCampaignResult(
+        campaign_id=created["campaign_id"],
+        adset_id=created["adset_id"],
+        ad_id=created["ad_id"],
+        ads_manager_url=(
+            f"https://adsmanager.facebook.com/adsmanager/manage/campaigns?act={account}"
+            f"&selected_campaign_ids={created['campaign_id']}"
+        ),
+    )

@@ -523,6 +523,93 @@ export type MetaAdsStatus = {
   missing_scopes: string[];
   last_error: string | null;
   can_manage: boolean;
+  page_id: string | null;
+  page_name: string | null;
+  instagram_username: string | null;
+  leads_live: boolean;
+  webhook_configured: boolean;
+};
+
+export type MetaPage = {
+  id: string;
+  name: string;
+  instagram_id: string | null;
+  instagram_username: string | null;
+};
+
+export type MetaLeadForm = {
+  id: string;
+  name: string;
+  status: string | null;
+  leads_count: number | null;
+};
+
+export type MetaLeadRecord = {
+  id: number;
+  campaign_name: string | null;
+  ad_name: string | null;
+  status: "pending" | "created" | "linked" | "failed";
+  contact_id: number | null;
+  error: string | null;
+  received_at: string;
+};
+
+export type MetaCampaignLeadRow = {
+  campaign_id: string;
+  campaign_name: string;
+  spend: number;
+  meta_leads: number;
+  crm_leads: number;
+  contacted: number;
+  qualified: number;
+  visited: number;
+  closed: number;
+  cost_per_lead: number | null;
+  cost_per_qualified: number | null;
+  cost_per_visit: number | null;
+};
+
+export type MetaLeadPerformance = {
+  date_preset: string;
+  currency: string | null;
+  rows: MetaCampaignLeadRow[];
+  totals: MetaCampaignLeadRow;
+  failed_leads: number;
+};
+
+export type MetaReel = {
+  media_id: string;
+  caption: string;
+  permalink: string | null;
+  thumbnail_url: string | null;
+  posted_at: string | null;
+  views: number;
+  reach: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  saved: number;
+  engagement_rate: number;
+  score: number | null;
+  rank: number;
+  verdict: "strong" | "decent" | "weak" | "not_enough_data" | "skip";
+  reasons: string[];
+  matched_areas: { area: string; leads: number; listings: number }[];
+  campaign: {
+    name: string;
+    objective: string;
+    daily_budget: number;
+    currency: string | null;
+    cities: string[];
+    age_min: number;
+    age_max: number;
+  } | null;
+};
+
+export type MetaReelSuggestions = {
+  instagram_username: string | null;
+  currency: string | null;
+  reels: MetaReel[];
 };
 
 export type MetaAdAccount = {

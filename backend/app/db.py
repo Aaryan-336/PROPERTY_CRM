@@ -27,6 +27,7 @@ from app.models import (
     CallLog,
     Contact,
     MetaAdConnection,
+    MetaLead,
     Property,
     PropertyInterest,
     PropertySource,
@@ -74,6 +75,8 @@ GUARDED_MAPPERS = {
     WhatsAppMessage,
     # Holds a user's encrypted Meta token: strictly the owning user's row.
     MetaAdConnection,
+    # Lead answers carry the prospect's phone and email.
+    MetaLead,
 }
 GUARDED_TABLE_NAMES = {m.__tablename__ for m in GUARDED_MAPPERS}
 

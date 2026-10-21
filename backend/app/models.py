@@ -862,6 +862,13 @@ class MetaAdConnection(Base):
         DateTime(timezone=True)
     )
     connected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The Facebook Page that owns the lead forms, and the Instagram business
+    # account linked to it (where the reels live).
+    page_id: Mapped[str | None] = mapped_column(Text)
+    page_name: Mapped[str | None] = mapped_column(Text)
+    instagram_id: Mapped[str | None] = mapped_column(Text)
+    instagram_username: Mapped[str | None] = mapped_column(Text)
+    page_subscribed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -906,3 +913,44 @@ class WorkerHeartbeat(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     note: Mapped[str | None] = mapped_column(Text)
+
+
+# A Meta lead's journey into the CRM: received -> created / linked / failed.
+META_LEAD_PENDING = "pending"
+META_LEAD_CREATED = "created"  # became a new contact
+META_LEAD_LINKED = "linked"    # matched a contact already in the CRM
+META_LEAD_FAILED = "failed"
+
+
+class MetaLead(Base):
+    """One lead delivered by Meta Lead Ads, stored as Meta sent it.
+
+    Raw-first, like ``whatsapp_messages``: the answers are kept verbatim so a
+    mapping fix can be replayed, and ``leadgen_id`` is unique so webhook
+    redelivery and the backfill can never create a contact twice.
+    """
+
+    __tablename__ = "meta_leads"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    leadgen_id: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    page_id: Mapped[str | None] = mapped_column(Text)
+    form_id: Mapped[str | None] = mapped_column(Text)
+    campaign_id: Mapped[str | None] = mapped_column(Text)
+    campaign_name: Mapped[str | None] = mapped_column(Text)
+    adset_id: Mapped[str | None] = mapped_column(Text)
+    ad_id: Mapped[str | None] = mapped_column(Text)
+    ad_name: Mapped[str | None] = mapped_column(Text)
+    platform: Mapped[str | None] = mapped_column(Text)
+    field_data: Mapped[dict | list | None] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default=META_LEAD_PENDING)
+    contact_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("contacts.id"))
+    error: Mapped[str | None] = mapped_column(Text)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    meta_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

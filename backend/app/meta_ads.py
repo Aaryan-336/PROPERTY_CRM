@@ -192,6 +192,15 @@ CAMPAIGN_FIELDS = (
 INSIGHT_FIELDS = (
     "campaign_id,campaign_name,spend,impressions,reach,clicks,ctr,cpc,cpm,actions"
 )
+LEAD_FIELDS = (
+    "id,created_time,field_data,form_id,ad_id,ad_name,adset_id,campaign_id,"
+    "campaign_name,platform,is_organic"
+)
+IG_MEDIA_FIELDS = (
+    "id,caption,media_type,media_product_type,permalink,timestamp,"
+    "thumbnail_url,like_count,comments_count"
+)
+IG_REEL_METRICS = "reach,views,likes,comments,shares,saved,total_interactions"
 LEAD_ACTION_TYPES = ("lead", "onsite_conversion.lead_grouped", "leadgen_grouped")
 
 
@@ -272,6 +281,124 @@ class GraphAds:
 
     def set_daily_budget(self, campaign_id: str, minor: int) -> None:
         self.post(campaign_id, {"daily_budget": str(minor)})
+
+    # -- Pages, lead forms and leads -------------------------------------
+
+    def pages(self) -> list[dict]:
+        """Pages this login administers, with the Instagram account linked to
+        each. A Page access token comes back with each row; it is used for the
+        immediate call and never stored (it is re-derived from the user token)."""
+        rows = self.get(
+            "me/accounts",
+            {
+                "fields": "id,name,access_token,instagram_business_account{id,username}",
+                "limit": 100,
+            },
+        ).get("data", [])
+        return [
+            {
+                "id": r["id"],
+                "name": r.get("name") or r["id"],
+                "access_token": r.get("access_token"),
+                "instagram_id": (r.get("instagram_business_account") or {}).get("id"),
+                "instagram_username": (r.get("instagram_business_account") or {}).get("username"),
+            }
+            for r in rows
+        ]
+
+    def subscribe_page_to_leads(self, page_id: str) -> None:
+        """Must be called with the Page's own token."""
+        self.post(f"{page_id}/subscribed_apps", {"subscribed_fields": "leadgen"})
+
+    def lead_forms(self, page_id: str) -> list[dict]:
+        rows = self.get(
+            f"{page_id}/leadgen_forms",
+            {"fields": "id,name,status,leads_count", "limit": 100},
+        ).get("data", [])
+        return [
+            {
+                "id": r["id"],
+                "name": r.get("name") or r["id"],
+                "status": r.get("status"),
+                "leads_count": r.get("leads_count"),
+            }
+            for r in rows
+        ]
+
+    def lead(self, leadgen_id: str) -> dict:
+        return self.get(leadgen_id, {"fields": LEAD_FIELDS})
+
+    def form_leads(self, form_id: str, since: int | None = None) -> list[dict]:
+        params: dict[str, Any] = {"fields": LEAD_FIELDS, "limit": 100}
+        if since:
+            params["filtering"] = json.dumps(
+                [{"field": "time_created", "operator": "GREATER_THAN", "value": since}]
+            )
+        rows: list[dict] = []
+        page = self.get(f"{form_id}/leads", params)
+        for _ in range(20):  # 2,000 leads per sync is plenty; keeps a call bounded
+            rows.extend(page.get("data", []))
+            nxt = (page.get("paging") or {}).get("next")
+            if not nxt:
+                break
+            with _client() as http:
+                page = _raise_for_graph(http.get(nxt))
+        return rows
+
+    # -- Instagram reels ---------------------------------------------------
+
+    def ig_media(self, ig_id: str, limit: int = 50) -> list[dict]:
+        return self.get(
+            f"{ig_id}/media", {"fields": IG_MEDIA_FIELDS, "limit": limit}
+        ).get("data", [])
+
+    def media_insights(self, media_id: str) -> dict[str, float]:
+        try:
+            rows = self.get(
+                f"{media_id}/insights", {"metric": IG_REEL_METRICS}
+            ).get("data", [])
+        except MetaApiError:
+            return {}  # some media (older, or non-reel) refuse a metric
+        return {
+            r["name"]: _num((r.get("values") or [{}])[0].get("value"))
+            for r in rows
+            if r.get("name")
+        }
+
+    def geo_search(self, query: str) -> dict | None:
+        rows = self.get(
+            "search",
+            {"type": "adgeolocation", "q": query, "location_types": '["city"]',
+             "country_code": "IN", "limit": 1},
+        ).get("data", [])
+        return rows[0] if rows else None
+
+    # -- Creating a (paused) campaign -----------------------------------
+
+    def create_campaign(self, account_id: str, name: str) -> str:
+        return self.post(
+            f"{account_id}/campaigns",
+            {
+                "name": name,
+                "objective": "OUTCOME_LEADS",
+                "status": "PAUSED",
+                "special_ad_categories": "[]",
+                # Budget lives on the ad set; this opts out of campaign budgets.
+                "is_adset_budget_sharing_enabled": "false",
+            },
+        )["id"]
+
+    def create_adset(self, account_id: str, fields: dict) -> str:
+        return self.post(f"{account_id}/adsets", fields)["id"]
+
+    def create_creative(self, account_id: str, fields: dict) -> str:
+        return self.post(f"{account_id}/adcreatives", fields)["id"]
+
+    def create_ad(self, account_id: str, fields: dict) -> str:
+        return self.post(f"{account_id}/ads", fields)["id"]
+
+    def ad(self, ad_id: str) -> dict:
+        return self.get(ad_id, {"fields": "id,name,adset_id,campaign_id,campaign{name}"})
 
     def revoke(self) -> None:
         self.delete("me/permissions")

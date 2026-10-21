@@ -128,7 +128,21 @@ class Settings(BaseSettings):
     # Where the browser lands after the OAuth round trip. Empty means the
     # first CORS origin + /meta-ads.
     meta_post_connect_redirect: str = ""
-    meta_scopes: str = "ads_mcp_management,ads_read,ads_management"
+    # Ads, plus what lead intake and reels need: Page access and lead retrieval
+    # (webhook + backfill), and Instagram basic/insights (reel performance).
+    meta_scopes: str = (
+        "ads_mcp_management,ads_read,ads_management,business_management,"
+        "pages_show_list,pages_read_engagement,pages_manage_metadata,"
+        "leads_retrieval,instagram_basic,instagram_manage_insights"
+    )
+    # Shared secret Meta echoes back when the webhook is first registered
+    # (Meta developer app -> Webhooks). Empty disables lead delivery.
+    meta_webhook_verify_token: str = ""
+    # Suggested daily budget for the best-scoring reel, in the ad account's
+    # major currency unit. Weaker reels get a fraction of it.
+    meta_default_daily_budget: int = 500
+    # Cities (Meta geo-search names, comma-separated) reel campaigns target.
+    meta_target_cities: str = "Mumbai"
     meta_graph_version: str = "v25.0"
     meta_ads_mcp_url: str = "https://mcp.facebook.com/ads"
     # auto: use the hosted Ads MCP where a matching tool is found, else the

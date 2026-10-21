@@ -86,6 +86,16 @@ services:
         sync: false
       - key: META_POST_CONNECT_REDIRECT
         sync: false
+      # Lead Ads webhook: Meta echoes this token back once, when the webhook
+      # URL (https://<this API>/internal/meta/webhook) is registered on the app.
+      - key: META_WEBHOOK_VERIFY_TOKEN
+        generateValue: true
+      # Suggested daily budget (account currency) for the best reel, and the
+      # cities reel campaigns target.
+      - key: META_DEFAULT_DAILY_BUDGET
+        value: "500"
+      - key: META_TARGET_CITIES
+        value: Mumbai
       - key: SESSION_IDLE_DAYS
         value: "30"
       - key: SESSION_ABSOLUTE_DAYS
