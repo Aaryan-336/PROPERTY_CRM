@@ -123,6 +123,9 @@ function isPublic(pathname: string) {
   return (
     pathname === "/login" ||
     pathname === "/offline" ||
+    pathname === "/privacy" ||
+    pathname === "/terms" ||
+    pathname === "/data-deletion" ||
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/icons") ||
     pathname === "/sw.js" ||
