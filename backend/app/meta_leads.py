@@ -54,6 +54,12 @@ _NAME_KEYS = ("full_name", "name")
 _PHONE_KEYS = ("phone_number", "phone", "mobile", "mobile_number", "whatsapp_number")
 _BHK = re.compile(r"\b(\d)\s*[- ]?\s*bhk\b", re.I)
 _LOCATION_HINTS = ("location", "city", "area", "locality", "preferred")
+_BUDGET_KEYS = ("budget", "price")
+_AMOUNT = re.compile(r"(\d+(?:\.\d+)?)\s*(crores?|cr|lakhs?|lacs?|lac|l|k)?(?![a-z])", re.I)
+_UNIT = {"cr": 10_000_000, "crore": 10_000_000, "l": 100_000, "lac": 100_000,
+         "lakh": 100_000, "k": 1_000}
+_UPPER_ONLY = ("under", "below", "upto", "up to", "less than", "max")
+_LOWER_ONLY = ("above", "over", "more than", "plus", "min")
 
 
 def _now() -> datetime:
@@ -99,6 +105,34 @@ def _clean_phone(raw: str | None) -> str | None:
     return cleaned if normalize_phone(cleaned) else None
 
 
+def parse_budget(text: str | None) -> tuple[int | None, int | None]:
+    """Rupee ``(min, max)`` from a form answer such as ``₹2_cr_to_₹4_cr``,
+    ``50 lakh - 1 cr``, ``under 1 cr`` or ``above 4 cr``. A unit written once
+    ("1-2 cr") applies to both ends. Anything unreadable gives ``(None, None)``
+    rather than a guess."""
+    if not text:
+        return None, None
+    flat = re.sub(r"[_\u20b9,]|rs\.?|inr", " ", text.lower())
+    found = [(float(m.group(1)), (m.group(2) or "").lower().rstrip("s")) for m in _AMOUNT.finditer(flat)]
+    if not found:
+        return None, None
+    amounts: list[int] = []
+    for i, (value, unit) in enumerate(found):
+        if not unit:  # borrow the unit written after it ("1 to 2 cr")
+            unit = next((u for _, u in found[i + 1 :] if u), "")
+        if unit not in _UNIT:
+            return None, None
+        amounts.append(int(round(value * _UNIT[unit])))
+    if len(amounts) == 1:
+        if any(w in flat for w in _UPPER_ONLY):
+            return None, amounts[0]
+        if any(w in flat for w in _LOWER_ONLY):
+            return amounts[0], None
+        return amounts[0], amounts[0]
+    lo, hi = sorted(amounts[:2])
+    return lo, hi
+
+
 def map_contact_fields(field_data: Any) -> dict[str, Any]:
     """Name, phone, email, BHK and locations where the form has them; every
     other answer is kept verbatim in remarks so nothing the prospect typed is
@@ -128,7 +162,16 @@ def map_contact_fields(field_data: Any) -> dict[str, Any]:
         if any(h in key for h in _LOCATION_HINTS):
             locations.extend(p.strip() for p in re.split(r"[,/]", value) if p.strip())
 
+    budget_min = budget_max = None
+    for key, value in extra.items():
+        if any(h in key for h in _BUDGET_KEYS):
+            budget_min, budget_max = parse_budget(value)
+            if budget_min or budget_max:
+                break
+
     return {
+        "budget_min": budget_min,
+        "budget_max": budget_max,
         "first_name": first or "Meta lead",
         "last_name": last,
         "phone": phone,
@@ -235,6 +278,8 @@ def convert(db: DbSession, lead: MetaLead, owner_id: int) -> Contact:
         phone=fields["phone"],
         email=fields["email"],
         bhk=fields["bhk"],
+        budget_min=fields["budget_min"],
+        budget_max=fields["budget_max"],
         preferred_locations=fields["preferred_locations"],
         lead_source=LEAD_SOURCE,
         campaign=lead.campaign_name,
@@ -355,4 +400,30 @@ def sync_forms(db: DbSession, conn: MetaAdConnection, token: str, since: int | N
             # A backfill can be hundreds of old leads; one push each is noise.
             process_lead(db, row.id, notify=False)
     retried = retry_pending(db)
-    return {"new": new, "retried": retried}
+    return {"new": new, "retried": retried, "budgets_filled": backfill_budgets(db)}
+
+
+def backfill_budgets(db: DbSession) -> int:
+    """Fill budget on contacts created from a Meta lead before budgets were read.
+    Only touches a contact whose budget is still empty, so it never overwrites
+    something a person typed, and is safe to run on every sync."""
+    filled = 0
+    with system_scope():
+        rows = db.execute(
+            select(MetaLead, Contact)
+            .join(Contact, Contact.id == MetaLead.contact_id)
+            .where(
+                MetaLead.status == META_LEAD_CREATED,
+                Contact.budget_min.is_(None),
+                Contact.budget_max.is_(None),
+            )
+        ).all()
+        for lead, contact in rows:
+            fields = map_contact_fields(lead.field_data)
+            if fields["budget_min"] or fields["budget_max"]:
+                contact.budget_min = fields["budget_min"]
+                contact.budget_max = fields["budget_max"]
+                filled += 1
+        if filled:
+            db.commit()
+    return filled

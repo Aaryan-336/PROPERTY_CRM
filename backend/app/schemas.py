@@ -1026,6 +1026,7 @@ class MetaLeadOut(BaseModel):
 class MetaLeadSyncResult(BaseModel):
     new: int
     retried: int
+    budgets_filled: int = 0
 
 
 class MetaCampaignLeadRow(BaseModel):

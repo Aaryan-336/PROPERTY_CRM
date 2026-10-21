@@ -340,3 +340,52 @@ def test_a_failure_part_way_removes_the_half_built_campaign(client, owner_h, see
     res = _create(client, owner_h)
     assert res.status_code == 502
     assert fm.deleted == ["c-1"]
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("₹2_cr_to_₹4_cr", (20_000_000, 40_000_000)),
+        ("2 cr - 4 cr", (20_000_000, 40_000_000)),
+        ("1-2 cr", (10_000_000, 20_000_000)),
+        ("50_lakh_to_1_cr", (5_000_000, 10_000_000)),
+        ("1.5 crore", (15_000_000, 15_000_000)),
+        ("under_1_cr", (None, 10_000_000)),
+        ("above 4 cr", (40_000_000, None)),
+        ("not sure", (None, None)),
+        ("", (None, None)),
+        (None, (None, None)),
+    ],
+)
+def test_budget_answers_become_rupee_ranges(text, expected):
+    assert meta_leads.parse_budget(text) == expected
+
+
+def test_a_budget_answer_fills_the_contacts_budget():
+    fields = meta_leads.map_contact_fields(
+        [
+            {"name": "full_name", "values": ["Rahul"]},
+            {"name": "what_is_your_budget?", "values": ["₹2_cr_to_₹4_cr"]},
+        ]
+    )
+    assert (fields["budget_min"], fields["budget_max"]) == (20_000_000, 40_000_000)
+
+
+def test_sync_fills_the_budget_on_leads_imported_before_budgets_were_read(client, owner_h, seeded, fm):
+    from app.db import SessionLocal, system_scope
+
+    fm.leads["L1"]["field_data"].append({"name": "what_is_your_budget?", "values": ["₹2_cr_to_₹4_cr"]})
+    _connect(client, owner_h)
+    client.post("/meta-ads/leads/sync", headers=owner_h)
+    db = SessionLocal()
+    with system_scope():
+        (c,) = _contacts()
+        c = db.get(type(c), c.id)
+        c.budget_min = c.budget_max = None  # as the 284 earlier imports were
+        db.commit()
+    res = client.post("/meta-ads/leads/sync", headers=owner_h)
+    assert res.json()["budgets_filled"] == 1
+    (c,) = _contacts()
+    assert (int(c.budget_min), int(c.budget_max)) == (20_000_000, 40_000_000)
+    assert client.post("/meta-ads/leads/sync", headers=owner_h).json()["budgets_filled"] == 0
+    db.close()
